@@ -124,7 +124,7 @@ export default function ServicesManager({ token }) {
           <label>Description</label>
           <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
-        <button className="btn" type="submit" disabled={creating}>
+        <button className="btn btn-accent" type="submit" disabled={creating}>
           {creating ? 'Adding…' : 'Add service'}
         </button>
       </form>
@@ -177,10 +177,10 @@ export default function ServicesManager({ token }) {
                         />
                       </td>
                       <td style={{ display: 'flex', gap: 6 }}>
-                        <button type="button" className="btn" onClick={() => saveEdit(s.id)} disabled={savingId === s.id}>
+                        <button type="button" className="btn btn-accent btn-sm" onClick={() => saveEdit(s.id)} disabled={savingId === s.id}>
                           {savingId === s.id ? 'Saving…' : 'Save'}
                         </button>
-                        <button type="button" className="btn btn-secondary" onClick={() => setEditingId(null)}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>
                           Cancel
                         </button>
                       </td>
@@ -192,7 +192,7 @@ export default function ServicesManager({ token }) {
                       <td>${Number(s.price).toFixed(2)}</td>
                       <td className="muted">{s.description}</td>
                       <td>
-                        <button type="button" className="btn btn-secondary" onClick={() => startEdit(s)}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEdit(s)}>
                           Edit
                         </button>
                       </td>

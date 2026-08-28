@@ -146,7 +146,7 @@ export default function AvailabilityManager({ token }) {
             />
           </div>
         </div>
-        <button className="btn" type="submit" disabled={creating || !serviceId}>
+        <button className="btn btn-accent" type="submit" disabled={creating || !serviceId}>
           {creating ? 'Adding…' : 'Add window'}
         </button>
       </form>
@@ -197,10 +197,10 @@ export default function AvailabilityManager({ token }) {
                       />
                     </td>
                     <td style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="btn" onClick={() => saveEdit(w.id)} disabled={savingId === w.id}>
+                      <button type="button" className="btn btn-accent btn-sm" onClick={() => saveEdit(w.id)} disabled={savingId === w.id}>
                         {savingId === w.id ? 'Saving…' : 'Save'}
                       </button>
-                      <button type="button" className="btn btn-secondary" onClick={() => setEditingId(null)}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>
                         Cancel
                       </button>
                     </td>
@@ -211,7 +211,7 @@ export default function AvailabilityManager({ token }) {
                     <td>{w.start_time.slice(0, 5)}</td>
                     <td>{w.end_time.slice(0, 5)}</td>
                     <td>
-                      <button type="button" className="btn btn-secondary" onClick={() => startEdit(w)}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEdit(w)}>
                         Edit
                       </button>
                     </td>

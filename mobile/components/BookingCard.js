@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, radii, statusColors } from '../theme';
 
 function toDateInput(iso) {
   return new Date(iso).toISOString().slice(0, 10);
@@ -18,29 +20,26 @@ function formatSlot(iso) {
   });
 }
 
-const statusColors = {
-  confirmed: { bg: '#dcfce7', text: '#166534' },
-  cancelled: { bg: '#fee2e2', text: '#991b1b' },
-  rescheduled: { bg: '#fef9c3', text: '#854d0e' },
-};
+const GREETING = 'Tell me when you\'d like to move this — try "Friday afternoon" or "next Tuesday at 10am".';
 
 export default function BookingCard({ booking, onCancel, onReschedule, onAiReschedule }) {
   const [mode, setMode] = useState(null); // null | 'manual' | 'ai'
   const [date, setDate] = useState(toDateInput(booking.start_time));
   const [time, setTime] = useState(toTimeInput(booking.start_time));
-  const [aiMessage, setAiMessage] = useState('');
-  const [aiSuggestions, setAiSuggestions] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const [chat, setChat] = useState([{ role: 'assistant', text: GREETING }]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
+
   const durationMinutes = booking.services?.duration_minutes || 30;
   const canModify = booking.status !== 'cancelled';
-  const colors = statusColors[booking.status] || statusColors.confirmed;
+  const colorSet = statusColors[booking.status] || statusColors.confirmed;
 
   function resetPanels() {
     setMode(null);
     setError('');
-    setAiSuggestions(null);
   }
 
   async function submitReschedule() {
@@ -50,37 +49,6 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
       const startTime = new Date(`${date}T${time}:00`);
       const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
       await onReschedule(booking.id, startTime.toISOString(), endTime.toISOString());
-      resetPanels();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitAiReschedule() {
-    setBusy(true);
-    setError('');
-    setAiSuggestions(null);
-    try {
-      await onAiReschedule(booking.id, aiMessage);
-      setAiMessage('');
-      resetPanels();
-    } catch (err) {
-      setError(err.message);
-      if (err.data?.nearest_slots?.length) {
-        setAiSuggestions(err.data.nearest_slots);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function applySuggestedSlot(slot) {
-    setBusy(true);
-    setError('');
-    try {
-      await onReschedule(booking.id, slot.start_time, slot.end_time);
       resetPanels();
     } catch (err) {
       setError(err.message);
@@ -101,22 +69,71 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
     }
   }
 
+  async function sendChatMessage() {
+    const message = chatInput.trim();
+    if (!message) return;
+
+    setChat((c) => [...c, { role: 'user', text: message }]);
+    setChatInput('');
+    setChatBusy(true);
+
+    try {
+      const result = await onAiReschedule(booking.id, message);
+      const newTime = result?.booking?.start_time || booking.start_time;
+      setChat((c) => [...c, { role: 'assistant', text: `Done — I've moved it to ${formatSlot(newTime)}.` }]);
+    } catch (err) {
+      const suggestions = err.data?.nearest_slots?.length ? err.data.nearest_slots : null;
+      setChat((c) => [...c, { role: 'error', text: err.message, suggestions }]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  async function applySuggestedSlot(slot) {
+    setChatBusy(true);
+    try {
+      await onReschedule(booking.id, slot.start_time, slot.end_time);
+      setChat((c) => [...c, { role: 'assistant', text: `Booked for ${formatSlot(slot.start_time)}.` }]);
+    } catch (err) {
+      setChat((c) => [...c, { role: 'error', text: err.message }]);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{booking.services?.name || 'Service'}</Text>
-          <Text style={styles.date}>{new Date(booking.start_time).toLocaleString()}</Text>
+        <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
+          <View style={styles.avatar}>
+            <Ionicons name="cut-outline" size={16} color={colors.white} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{booking.services?.name || 'Service'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Ionicons name="calendar-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.date}>
+                {new Date(booking.start_time).toLocaleString([], {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </Text>
+            </View>
+          </View>
         </View>
-        <View style={[styles.badge, { backgroundColor: colors.bg }]}>
-          <Text style={[styles.badgeText, { color: colors.text }]}>{booking.status}</Text>
+        <View style={[styles.badge, { backgroundColor: colorSet.bg }]}>
+          <Text style={[styles.badgeText, { color: colorSet.text }]}>{booking.status}</Text>
         </View>
       </View>
 
       {canModify && mode === null && (
         <View style={styles.actions}>
-          <Pressable style={styles.btn} onPress={() => setMode('ai')} disabled={busy}>
-            <Text style={styles.btnText}>Ask AI</Text>
+          <Pressable style={styles.btnAccent} onPress={() => setMode('ai')} disabled={busy}>
+            <Ionicons name="sparkles" size={13} color={colors.white} />
+            <Text style={styles.btnAccentText}>Ask AI</Text>
           </Pressable>
           <Pressable style={styles.btnSecondary} onPress={() => setMode('manual')} disabled={busy}>
             <Text style={styles.btnSecondaryText}>Reschedule</Text>
@@ -140,8 +157,8 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
             </View>
           </View>
           <View style={styles.actions}>
-            <Pressable style={styles.btn} onPress={submitReschedule} disabled={busy}>
-              <Text style={styles.btnText}>{busy ? 'Saving…' : 'Save'}</Text>
+            <Pressable style={styles.btnAccent} onPress={submitReschedule} disabled={busy}>
+              <Text style={styles.btnAccentText}>{busy ? 'Saving…' : 'Save'}</Text>
             </Pressable>
             <Pressable style={styles.btnSecondary} onPress={resetPanels} disabled={busy}>
               <Text style={styles.btnSecondaryText}>Cancel edit</Text>
@@ -152,39 +169,61 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 
       {canModify && mode === 'ai' && (
         <View style={{ marginTop: 12 }}>
-          <Text style={styles.label}>Tell the AI when you'd like to move it</Text>
-          <TextInput
-            style={styles.input}
-            value={aiMessage}
-            onChangeText={setAiMessage}
-            placeholder='e.g. "move it to Friday afternoon"'
-          />
-          <View style={styles.actions}>
-            <Pressable style={styles.btn} onPress={submitAiReschedule} disabled={busy || !aiMessage.trim()}>
-              <Text style={styles.btnText}>{busy ? 'Thinking…' : 'Send'}</Text>
-            </Pressable>
-            <Pressable style={styles.btnSecondary} onPress={resetPanels} disabled={busy}>
-              <Text style={styles.btnSecondaryText}>Cancel</Text>
+          <ScrollView style={styles.chatThread} nestedScrollEnabled>
+            {chat.map((msg, i) => (
+              <View key={i} style={{ marginBottom: 8 }}>
+                <View
+                  style={[
+                    styles.bubble,
+                    msg.role === 'user' && styles.bubbleUser,
+                    msg.role === 'assistant' && styles.bubbleAssistant,
+                    msg.role === 'error' && styles.bubbleError,
+                  ]}
+                >
+                  <Text style={msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleText}>{msg.text}</Text>
+                </View>
+                {msg.suggestions && (
+                  <View style={styles.slotWrap}>
+                    {msg.suggestions.map((slot) => (
+                      <Pressable
+                        key={slot.start_time}
+                        style={styles.slot}
+                        onPress={() => applySuggestedSlot(slot)}
+                        disabled={chatBusy}
+                      >
+                        <Text style={styles.slotText}>{formatSlot(slot.start_time)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+            {chatBusy && (
+              <View style={[styles.bubble, styles.bubbleAssistant]}>
+                <Text style={styles.bubbleText}>Thinking…</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.chatInputRow}>
+            <TextInput
+              style={styles.chatInput}
+              value={chatInput}
+              onChangeText={setChatInput}
+              placeholder="Type a message…"
+              editable={!chatBusy}
+            />
+            <Pressable
+              style={[styles.sendBtn, (chatBusy || !chatInput.trim()) && styles.sendBtnDisabled]}
+              onPress={sendChatMessage}
+              disabled={chatBusy || !chatInput.trim()}
+            >
+              <Ionicons name="send" size={15} color={colors.white} />
             </Pressable>
           </View>
-
-          {aiSuggestions && (
-            <View style={{ marginTop: 12 }}>
-              <Text style={styles.suggestLabel}>Closest open times — tap one to book it:</Text>
-              <View style={styles.slotWrap}>
-                {aiSuggestions.map((slot) => (
-                  <Pressable
-                    key={slot.start_time}
-                    style={styles.slot}
-                    onPress={() => applySuggestedSlot(slot)}
-                    disabled={busy}
-                  >
-                    <Text style={styles.slotText}>{formatSlot(slot.start_time)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
+          <Pressable style={[styles.btnSecondary, { marginTop: 10, alignSelf: 'flex-start' }]} onPress={resetPanels}>
+            <Text style={styles.btnSecondaryText}>Close</Text>
+          </Pressable>
         </View>
       )}
 
@@ -194,25 +233,36 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 16, marginBottom: 12 },
+  card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft, borderRadius: radii.md, padding: 16, marginBottom: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  name: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  date: { fontSize: 13, color: '#6b7280' },
-  badge: { borderRadius: 999, paddingVertical: 3, paddingHorizontal: 10 },
+  avatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 3 },
+  date: { fontSize: 12.5, color: colors.textMuted },
+  badge: { borderRadius: radii.pill, paddingVertical: 3, paddingHorizontal: 10 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   row: { flexDirection: 'row', marginBottom: 8 },
-  label: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
-  suggestLabel: { fontSize: 12, color: '#6b7280', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 8 },
-  btn: { backgroundColor: '#4f46e5', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
-  btnText: { color: '#fff', fontWeight: '600' },
-  btnSecondary: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
-  btnSecondaryText: { color: '#1a1d23', fontWeight: '600' },
-  btnDanger: { backgroundColor: '#dc2626', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
-  btnDangerText: { color: '#fff', fontWeight: '600' },
-  slotWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  slot: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#fff' },
-  slotText: { fontSize: 13, color: '#1a1d23' },
-  error: { color: '#dc2626', marginTop: 8, fontSize: 13 },
+  label: { fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '600' },
+  input: { borderWidth: 1.5, borderColor: colors.border, borderRadius: radii.sm, padding: 9, fontSize: 13.5 },
+  btnAccent: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.accent, borderRadius: radii.pill, paddingVertical: 9, paddingHorizontal: 15 },
+  btnAccentText: { color: colors.white, fontWeight: '700', fontSize: 12.5 },
+  btnSecondary: { borderWidth: 1.5, borderColor: colors.border, borderRadius: radii.pill, paddingVertical: 9, paddingHorizontal: 15 },
+  btnSecondaryText: { color: colors.text, fontWeight: '700', fontSize: 12.5 },
+  btnDanger: { backgroundColor: colors.danger, borderRadius: radii.pill, paddingVertical: 9, paddingHorizontal: 15 },
+  btnDangerText: { color: colors.white, fontWeight: '700', fontSize: 12.5 },
+  chatThread: { maxHeight: 220, backgroundColor: colors.surface2, borderRadius: radii.md, padding: 10 },
+  bubble: { maxWidth: '85%', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14 },
+  bubbleAssistant: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderBottomLeftRadius: 4 },
+  bubbleUser: { alignSelf: 'flex-end', backgroundColor: colors.accent, borderBottomRightRadius: 4 },
+  bubbleError: { alignSelf: 'flex-start', backgroundColor: colors.dangerSoft, borderBottomLeftRadius: 4 },
+  bubbleText: { fontSize: 13, color: colors.text, lineHeight: 18 },
+  bubbleTextUser: { fontSize: 13, color: colors.white, lineHeight: 18 },
+  slotWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  slot: { borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, paddingVertical: 6, paddingHorizontal: 12, backgroundColor: colors.surface },
+  slotText: { fontSize: 12, color: colors.text, fontWeight: '600' },
+  chatInputRow: { flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' },
+  chatInput: { flex: 1, borderWidth: 1.5, borderColor: colors.border, borderRadius: radii.pill, paddingVertical: 10, paddingHorizontal: 16, fontSize: 13.5 },
+  sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  sendBtnDisabled: { backgroundColor: '#b9cdfb' },
+  error: { color: colors.danger, marginTop: 8, fontSize: 13 },
 });

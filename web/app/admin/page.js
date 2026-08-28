@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import ServicesManager from '../../components/admin/ServicesManager';
 import AvailabilityManager from '../../components/admin/AvailabilityManager';
 import BookingsOverview from '../../components/admin/BookingsOverview';
+import { IconShield } from '../../components/icons';
 
 const TABS = [
   { key: 'services', label: 'Services' },
@@ -22,16 +23,22 @@ export default function AdminPage() {
 
   if (!session) {
     return (
-      <div className="card" style={{ maxWidth: 420, margin: '48px auto 0', textAlign: 'center' }}>
+      <div className="card-lg" style={{ maxWidth: 420, margin: '64px auto 0', textAlign: 'center' }}>
+        <div className="avatar avatar-lg" style={{ margin: '0 auto 12px' }}>
+          <IconShield size={22} />
+        </div>
         <h2 style={{ marginTop: 0 }}>Sign in required</h2>
-        <a href="/login" className="btn">Sign in</a>
+        <a href="/login" className="btn btn-accent">Sign in</a>
       </div>
     );
   }
 
   if (profile?.role !== 'admin') {
     return (
-      <div className="card" style={{ maxWidth: 420, margin: '48px auto 0', textAlign: 'center' }}>
+      <div className="card-lg" style={{ maxWidth: 420, margin: '64px auto 0', textAlign: 'center' }}>
+        <div className="avatar avatar-lg" style={{ margin: '0 auto 12px', background: 'var(--danger-soft)', color: 'var(--danger)' }}>
+          <IconShield size={22} />
+        </div>
         <h2 style={{ marginTop: 0 }}>Admins only</h2>
         <p className="muted">Your account doesn't have admin access.</p>
       </div>
@@ -39,9 +46,18 @@ export default function AdminPage() {
   }
 
   return (
-    <div style={{ paddingTop: 32 }}>
-      <h1 style={{ marginBottom: 4 }}>Admin</h1>
-      <p className="muted">Manage services, availability, and view all bookings.</p>
+    <div style={{ paddingTop: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="avatar">
+          <IconShield size={16} />
+        </div>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Admin</h1>
+          <p className="muted" style={{ margin: '2px 0 0', fontSize: '0.88rem' }}>
+            Manage services, availability, and view all bookings.
+          </p>
+        </div>
+      </div>
 
       <div className="tabs">
         {TABS.map((t) => (

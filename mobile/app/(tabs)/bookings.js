@@ -1,13 +1,15 @@
 import { useCallback, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, Pressable } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import BookingCard from '../../components/BookingCard';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
+import { colors, radii } from '../../theme';
 
 export default function BookingsScreen() {
-  const { session, loading: authLoading } = useAuth();
+  const { session, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,18 +59,19 @@ export default function BookingsScreen() {
   }
 
   async function handleAiReschedule(bookingId, message) {
-    await apiFetch(`/api/bookings/${bookingId}/reschedule-ai`, {
+    const result = await apiFetch(`/api/bookings/${bookingId}/reschedule-ai`, {
       method: 'POST',
       token: session.access_token,
       body: { message },
     });
     load();
+    return result;
   }
 
   if (authLoading || loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
   }
@@ -76,21 +79,30 @@ export default function BookingsScreen() {
   if (!session) {
     return (
       <View style={styles.center}>
+        <View style={styles.avatar}>
+          <Ionicons name="calendar-outline" size={22} color={colors.white} />
+        </View>
         <Text style={styles.muted}>Sign in to see your bookings.</Text>
-        <Text style={styles.link} onPress={() => router.push('/login')}>
-          Sign in
-        </Text>
+        <Pressable style={styles.signInBtn} onPress={() => router.push('/login')}>
+          <Text style={styles.signInBtnText}>Sign in</Text>
+        </Pressable>
       </View>
     );
   }
 
+  const firstName = profile?.name?.split(' ')[0];
+
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>{firstName ? `${firstName}'s bookings` : 'My Bookings'}</Text>
+        <Text style={styles.subtitle}>Manage appointments, or ask the AI to move one.</Text>
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <FlatList
         data={bookings}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 4 }}
         renderItem={({ item }) => (
           <BookingCard
             booking={item}
@@ -115,9 +127,14 @@ export default function BookingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f7f8fa' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  muted: { color: '#6b7280', textAlign: 'center', marginBottom: 8 },
-  link: { color: '#4f46e5', fontWeight: '600' },
-  error: { color: '#dc2626', padding: 16 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: colors.bg },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  title: { fontSize: 22, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 3 },
+  avatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  muted: { color: colors.textMuted, textAlign: 'center', marginBottom: 12 },
+  signInBtn: { backgroundColor: colors.accent, borderRadius: radii.pill, paddingVertical: 12, paddingHorizontal: 24 },
+  signInBtnText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  error: { color: colors.danger, padding: 16 },
 });

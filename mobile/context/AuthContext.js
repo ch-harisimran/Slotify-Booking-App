@@ -1,26 +1,42 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-const AuthContext = createContext({ session: null, loading: true });
+const AuthContext = createContext({ session: null, profile: null, loading: true });
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  async function loadProfile(currentSession) {
+    if (!currentSession) {
+      setProfile(null);
+      return;
+    }
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, email, role')
+      .eq('id', currentSession.user.id)
+      .single();
+    setProfile(data || null);
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       setSession(data.session);
+      await loadProfile(data.session);
       setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      loadProfile(newSession);
     });
 
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  return <AuthContext.Provider value={{ session, loading }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ session, profile, loading }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

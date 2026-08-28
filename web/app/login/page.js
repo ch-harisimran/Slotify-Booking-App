@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
+import { IconCalendar } from '../../components/icons';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,10 +49,22 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '48px auto 0' }}>
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>{mode === 'signup' ? 'Create an account' : 'Sign in'}</h2>
+    <div style={{ maxWidth: 400, margin: '64px auto 0', position: 'relative' }}>
+      <div className="hero" style={{ position: 'absolute', inset: '-20px -20px auto -20px', height: 160, zIndex: -1 }} />
 
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <div className="avatar avatar-lg" style={{ margin: '0 auto 12px' }}>
+          <IconCalendar size={24} />
+        </div>
+        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>
+          {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+        </h1>
+        <p className="muted" style={{ marginTop: 4 }}>
+          {mode === 'signup' ? 'Book appointments in a few taps.' : 'Sign in to manage your bookings.'}
+        </p>
+      </div>
+
+      <div className="card-lg">
         <form onSubmit={handleSubmit}>
           {mode === 'signup' && (
             <div className="field">
@@ -89,7 +102,7 @@ export default function LoginPage() {
             />
           </div>
 
-          <button className="btn" type="submit" disabled={submitting} style={{ width: '100%' }}>
+          <button className="btn btn-accent btn-block" type="submit" disabled={submitting}>
             {submitting ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}
           </button>
 
@@ -97,7 +110,7 @@ export default function LoginPage() {
           {info && <p className="success-text">{info}</p>}
         </form>
 
-        <p className="muted" style={{ marginTop: 16, fontSize: '0.9rem' }}>
+        <p className="muted" style={{ marginTop: 18, fontSize: '0.88rem', textAlign: 'center' }}>
           {mode === 'signup' ? 'Already have an account?' : "Don't have an account?"}{' '}
           <a
             href="#"

@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabaseClient';
+import { colors, radii, shadow } from '../theme';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -45,58 +47,99 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Text style={styles.title}>{mode === 'signup' ? 'Create an account' : 'Sign in'}</Text>
+      <View style={styles.avatar}>
+        <Ionicons name="calendar" size={24} color={colors.white} />
+      </View>
+      <Text style={styles.title}>{mode === 'signup' ? 'Create your account' : 'Welcome back'}</Text>
+      <Text style={styles.subtitle}>
+        {mode === 'signup' ? 'Book appointments in a few taps.' : 'Sign in to manage your bookings.'}
+      </Text>
 
-      {mode === 'signup' && (
-        <>
-          <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} autoCapitalize="words" />
-        </>
-      )}
+      <View style={styles.card}>
+        {mode === 'signup' && (
+          <>
+            <Text style={styles.label}>Name</Text>
+            <TextInput style={styles.input} value={name} onChangeText={setName} autoCapitalize="words" />
+          </>
+        )}
 
-      <Text style={styles.label}>Email</Text>
-      <TextInput
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
-      <Text style={styles.label}>Password</Text>
-      <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
+        <Text style={styles.label}>Password</Text>
+        <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
 
-      <Pressable style={[styles.btn, submitting && styles.btnDisabled]} onPress={handleSubmit} disabled={submitting}>
-        <Text style={styles.btnText}>{submitting ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}</Text>
-      </Pressable>
+        <Pressable style={[styles.btn, submitting && styles.btnDisabled]} onPress={handleSubmit} disabled={submitting}>
+          <Text style={styles.btnText}>{submitting ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}</Text>
+        </Pressable>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {info ? <Text style={styles.info}>{info}</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {info ? <Text style={styles.info}>{info}</Text> : null}
 
-      <Pressable
-        onPress={() => {
-          setError('');
-          setInfo('');
-          setMode(mode === 'signup' ? 'signin' : 'signup');
-        }}
-      >
-        <Text style={styles.switch}>
-          {mode === 'signup' ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-        </Text>
-      </Pressable>
+        <Pressable
+          onPress={() => {
+            setError('');
+            setInfo('');
+            setMode(mode === 'signup' ? 'signin' : 'signup');
+          }}
+        >
+          <Text style={styles.switch}>
+            {mode === 'signup' ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+          </Text>
+        </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20, justifyContent: 'center' },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 20, textAlign: 'center' },
-  label: { fontSize: 13, color: '#6b7280', marginBottom: 6, marginTop: 12 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 10 },
-  btn: { backgroundColor: '#4f46e5', borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
-  btnDisabled: { backgroundColor: '#a5a6f6' },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  error: { color: '#dc2626', marginTop: 12, textAlign: 'center' },
-  info: { color: '#16a34a', marginTop: 12, textAlign: 'center' },
-  switch: { color: '#4f46e5', marginTop: 20, textAlign: 'center' },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 24, justifyContent: 'center' },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  title: { fontSize: 22, fontWeight: '800', textAlign: 'center', color: colors.text },
+  subtitle: { fontSize: 13.5, color: colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 22 },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    padding: 22,
+    ...shadow,
+  },
+  label: { fontSize: 12.5, fontWeight: '700', color: colors.textMuted, marginBottom: 6, marginTop: 12 },
+  input: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    padding: 12,
+    fontSize: 14.5,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  btn: {
+    backgroundColor: colors.accent,
+    borderRadius: radii.pill,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 22,
+  },
+  btnDisabled: { backgroundColor: '#b9cdfb' },
+  btnText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+  error: { color: colors.danger, marginTop: 12, textAlign: 'center' },
+  info: { color: colors.success, marginTop: 12, textAlign: 'center' },
+  switch: { color: colors.accent, fontWeight: '600', marginTop: 18, textAlign: 'center' },
 });
