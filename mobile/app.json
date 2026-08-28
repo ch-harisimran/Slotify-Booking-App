@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Slotify",
+    "slug": "slotify-mobile",
+    "scheme": "slotify",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.slotify.mobile"
+    },
+    "android": {
+      "package": "com.slotify.mobile"
+    },
+    "plugins": ["expo-router", "expo-notifications"],
+    "extra": {
+      "router": {}
+    }
+  }
+}
