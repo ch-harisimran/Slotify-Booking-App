@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 
 export default function Navbar() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -20,6 +20,7 @@ export default function Navbar() {
           {session ? (
             <>
               <Link href="/dashboard">My Bookings</Link>
+              {profile?.role === 'admin' && <Link href="/admin">Admin</Link>}
               <button className="btn btn-secondary" onClick={handleSignOut}>
                 Sign out
               </button>

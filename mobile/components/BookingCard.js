@@ -8,6 +8,15 @@ function toTimeInput(iso) {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+function formatSlot(iso) {
+  return new Date(iso).toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
 
 const statusColors = {
   confirmed: { bg: '#dcfce7', text: '#166534' },
@@ -15,16 +24,24 @@ const statusColors = {
   rescheduled: { bg: '#fef9c3', text: '#854d0e' },
 };
 
-export default function BookingCard({ booking, onCancel, onReschedule }) {
-  const [editing, setEditing] = useState(false);
+export default function BookingCard({ booking, onCancel, onReschedule, onAiReschedule }) {
+  const [mode, setMode] = useState(null); // null | 'manual' | 'ai'
   const [date, setDate] = useState(toDateInput(booking.start_time));
   const [time, setTime] = useState(toTimeInput(booking.start_time));
+  const [aiMessage, setAiMessage] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const durationMinutes = booking.services?.duration_minutes || 30;
   const canModify = booking.status !== 'cancelled';
   const colors = statusColors[booking.status] || statusColors.confirmed;
+
+  function resetPanels() {
+    setMode(null);
+    setError('');
+    setAiSuggestions(null);
+  }
 
   async function submitReschedule() {
     setBusy(true);
@@ -33,7 +50,38 @@ export default function BookingCard({ booking, onCancel, onReschedule }) {
       const startTime = new Date(`${date}T${time}:00`);
       const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
       await onReschedule(booking.id, startTime.toISOString(), endTime.toISOString());
-      setEditing(false);
+      resetPanels();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitAiReschedule() {
+    setBusy(true);
+    setError('');
+    setAiSuggestions(null);
+    try {
+      await onAiReschedule(booking.id, aiMessage);
+      setAiMessage('');
+      resetPanels();
+    } catch (err) {
+      setError(err.message);
+      if (err.data?.nearest_slots?.length) {
+        setAiSuggestions(err.data.nearest_slots);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applySuggestedSlot(slot) {
+    setBusy(true);
+    setError('');
+    try {
+      await onReschedule(booking.id, slot.start_time, slot.end_time);
+      resetPanels();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -65,9 +113,12 @@ export default function BookingCard({ booking, onCancel, onReschedule }) {
         </View>
       </View>
 
-      {canModify && !editing && (
+      {canModify && mode === null && (
         <View style={styles.actions}>
-          <Pressable style={styles.btnSecondary} onPress={() => setEditing(true)} disabled={busy}>
+          <Pressable style={styles.btn} onPress={() => setMode('ai')} disabled={busy}>
+            <Text style={styles.btnText}>Ask AI</Text>
+          </Pressable>
+          <Pressable style={styles.btnSecondary} onPress={() => setMode('manual')} disabled={busy}>
             <Text style={styles.btnSecondaryText}>Reschedule</Text>
           </Pressable>
           <Pressable style={styles.btnDanger} onPress={handleCancel} disabled={busy}>
@@ -76,7 +127,7 @@ export default function BookingCard({ booking, onCancel, onReschedule }) {
         </View>
       )}
 
-      {canModify && editing && (
+      {canModify && mode === 'manual' && (
         <View style={{ marginTop: 12 }}>
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 8 }}>
@@ -92,10 +143,48 @@ export default function BookingCard({ booking, onCancel, onReschedule }) {
             <Pressable style={styles.btn} onPress={submitReschedule} disabled={busy}>
               <Text style={styles.btnText}>{busy ? 'Saving…' : 'Save'}</Text>
             </Pressable>
-            <Pressable style={styles.btnSecondary} onPress={() => setEditing(false)} disabled={busy}>
+            <Pressable style={styles.btnSecondary} onPress={resetPanels} disabled={busy}>
               <Text style={styles.btnSecondaryText}>Cancel edit</Text>
             </Pressable>
           </View>
+        </View>
+      )}
+
+      {canModify && mode === 'ai' && (
+        <View style={{ marginTop: 12 }}>
+          <Text style={styles.label}>Tell the AI when you'd like to move it</Text>
+          <TextInput
+            style={styles.input}
+            value={aiMessage}
+            onChangeText={setAiMessage}
+            placeholder='e.g. "move it to Friday afternoon"'
+          />
+          <View style={styles.actions}>
+            <Pressable style={styles.btn} onPress={submitAiReschedule} disabled={busy || !aiMessage.trim()}>
+              <Text style={styles.btnText}>{busy ? 'Thinking…' : 'Send'}</Text>
+            </Pressable>
+            <Pressable style={styles.btnSecondary} onPress={resetPanels} disabled={busy}>
+              <Text style={styles.btnSecondaryText}>Cancel</Text>
+            </Pressable>
+          </View>
+
+          {aiSuggestions && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={styles.suggestLabel}>Closest open times — tap one to book it:</Text>
+              <View style={styles.slotWrap}>
+                {aiSuggestions.map((slot) => (
+                  <Pressable
+                    key={slot.start_time}
+                    style={styles.slot}
+                    onPress={() => applySuggestedSlot(slot)}
+                    disabled={busy}
+                  >
+                    <Text style={styles.slotText}>{formatSlot(slot.start_time)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -111,9 +200,10 @@ const styles = StyleSheet.create({
   date: { fontSize: 13, color: '#6b7280' },
   badge: { borderRadius: 999, paddingVertical: 3, paddingHorizontal: 10 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   row: { flexDirection: 'row', marginBottom: 8 },
   label: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
+  suggestLabel: { fontSize: 12, color: '#6b7280', marginBottom: 8 },
   input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 8 },
   btn: { backgroundColor: '#4f46e5', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
   btnText: { color: '#fff', fontWeight: '600' },
@@ -121,5 +211,8 @@ const styles = StyleSheet.create({
   btnSecondaryText: { color: '#1a1d23', fontWeight: '600' },
   btnDanger: { backgroundColor: '#dc2626', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16 },
   btnDangerText: { color: '#fff', fontWeight: '600' },
+  slotWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slot: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#fff' },
+  slotText: { fontSize: 13, color: '#1a1d23' },
   error: { color: '#dc2626', marginTop: 8, fontSize: 13 },
 });

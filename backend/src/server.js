@@ -20,8 +20,7 @@ app.use('/api/availability', availabilityRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/admin', adminRoutes);
 
-// AI reschedule endpoint (POST /api/bookings/:id/reschedule-ai) lands in Week 4
-// once OpenRouter is wired in — not part of this Week 1 scaffold.
+// AI reschedule lives at POST /api/bookings/:id/reschedule-ai (see bookings.routes.js)
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use(errorHandler);

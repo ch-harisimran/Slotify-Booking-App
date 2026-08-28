@@ -48,6 +48,15 @@ export default function DashboardPage() {
     await loadBookings();
   }
 
+  async function handleAiReschedule(bookingId, message) {
+    await apiFetch(`/api/bookings/${bookingId}/reschedule-ai`, {
+      method: 'POST',
+      token: session.access_token,
+      body: { message },
+    });
+    await loadBookings();
+  }
+
   if (authLoading) return <p className="muted" style={{ paddingTop: 32 }}>Loading…</p>;
 
   if (!session) {
@@ -76,16 +85,9 @@ export default function DashboardPage() {
           booking={booking}
           onCancel={handleCancel}
           onReschedule={handleReschedule}
+          onAiReschedule={handleAiReschedule}
         />
       ))}
-
-      <div className="card" style={{ marginTop: 24, opacity: 0.6 }}>
-        <h3 style={{ marginTop: 0 }}>AI Reschedule</h3>
-        <p className="muted" style={{ fontSize: '0.9rem' }}>
-          "Move my haircut to Friday afternoon" — the natural-language reschedule chat box arrives in
-          Week 4, once the OpenRouter integration is wired in. Use "Reschedule" above for now.
-        </p>
-      </div>
     </div>
   );
 }

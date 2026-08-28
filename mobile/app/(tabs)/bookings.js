@@ -15,7 +15,7 @@ export default function BookingsScreen() {
   const [error, setError] = useState('');
 
   // Registers for Expo push notifications (permission + token). Sending the
-  // token to the backend for confirmation/reminder pushes is Week 4 polish.
+  // token to the backend for confirmation/reminder pushes is still a TODO.
   usePushNotifications();
 
   const load = useCallback(async () => {
@@ -56,6 +56,15 @@ export default function BookingsScreen() {
     load();
   }
 
+  async function handleAiReschedule(bookingId, message) {
+    await apiFetch(`/api/bookings/${bookingId}/reschedule-ai`, {
+      method: 'POST',
+      token: session.access_token,
+      body: { message },
+    });
+    load();
+  }
+
   if (authLoading || loading) {
     return (
       <View style={styles.center}>
@@ -83,7 +92,12 @@ export default function BookingsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16 }}
         renderItem={({ item }) => (
-          <BookingCard booking={item} onCancel={handleCancel} onReschedule={handleReschedule} />
+          <BookingCard
+            booking={item}
+            onCancel={handleCancel}
+            onReschedule={handleReschedule}
+            onAiReschedule={handleAiReschedule}
+          />
         )}
         refreshControl={
           <RefreshControl
@@ -95,15 +109,6 @@ export default function BookingsScreen() {
           />
         }
         ListEmptyComponent={<Text style={styles.muted}>No bookings yet. Book a service from the Services tab.</Text>}
-        ListFooterComponent={
-          <View style={styles.aiPlaceholder}>
-            <Text style={styles.aiTitle}>AI Reschedule</Text>
-            <Text style={styles.aiText}>
-              "Move my haircut to Friday afternoon" — the natural-language reschedule chat box arrives in Week 4,
-              once the OpenRouter integration is wired in. Use "Reschedule" above for now.
-            </Text>
-          </View>
-        }
       />
     </View>
   );
@@ -115,7 +120,4 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280', textAlign: 'center', marginBottom: 8 },
   link: { color: '#4f46e5', fontWeight: '600' },
   error: { color: '#dc2626', padding: 16 },
-  aiPlaceholder: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 16, opacity: 0.6, marginTop: 8 },
-  aiTitle: { fontWeight: '700', marginBottom: 6 },
-  aiText: { color: '#6b7280', fontSize: 13 },
 });

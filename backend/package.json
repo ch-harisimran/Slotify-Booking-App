@@ -1,9 +1,12 @@
 {
   "name": "slotify-backend",
   "version": "1.0.0",
-  "description": "Slotify booking API — Node.js/Express backend (Week 1 scaffold)",
+  "description": "Slotify booking API — Node.js/Express backend",
   "main": "src/server.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js"
