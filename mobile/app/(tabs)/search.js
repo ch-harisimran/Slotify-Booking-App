@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, TextInput, FlatList, StyleSheet, Pressable, Image } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../../lib/api';
-import { useAuth } from '../../context/AuthContext';
+import { useDoctorSearch } from '../../hooks/useDoctorSearch';
 import { getRecentlyViewed } from '../../lib/recentlyViewed';
 import DoctorCard from '../../components/DoctorCard';
 import EmptyState from '../../components/EmptyState';
@@ -12,69 +11,18 @@ import { colors, radii } from '../../theme';
 import { getSpecialtyStyle } from '../../lib/specialties';
 
 export default function SearchScreen() {
-  const { session } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [doctors, setDoctors] = useState([]);
-  const [query, setQuery] = useState('');
-  const [specialty, setSpecialty] = useState('All');
-  const [favoriteIds, setFavoriteIds] = useState(new Set());
+  const {
+    doctors, query, setQuery, specialty, setSpecialty, favoriteIds, toggleFavorite, specialties, filtered,
+  } = useDoctorSearch();
   const [recentIds, setRecentIds] = useState([]);
-
-  useEffect(() => {
-    apiFetch('/api/services').then(setDoctors).catch(() => {});
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
       getRecentlyViewed().then(setRecentIds);
-      if (session) {
-        apiFetch('/api/favorites/me', { token: session.access_token })
-          .then((rows) => setFavoriteIds(new Set(rows.map((r) => r.service_id))))
-          .catch(() => {});
-      } else {
-        setFavoriteIds(new Set());
-      }
-    }, [session])
+    }, [])
   );
-
-  async function toggleFavorite(doctor) {
-    if (!session) return router.push('/login');
-    const isFav = favoriteIds.has(doctor.id);
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      isFav ? next.delete(doctor.id) : next.add(doctor.id);
-      return next;
-    });
-    try {
-      if (isFav) {
-        await apiFetch(`/api/favorites/${doctor.id}`, { method: 'DELETE', token: session.access_token });
-      } else {
-        await apiFetch('/api/favorites', { method: 'POST', token: session.access_token, body: { service_id: doctor.id } });
-      }
-    } catch {
-      setFavoriteIds((prev) => {
-        const next = new Set(prev);
-        isFav ? next.add(doctor.id) : next.delete(doctor.id);
-        return next;
-      });
-    }
-  }
-
-  const specialties = useMemo(() => {
-    const set = new Set(doctors.map((d) => d.specialty).filter(Boolean));
-    return ['All', ...set];
-  }, [doctors]);
-
-  const filtered = useMemo(() => {
-    let list = doctors;
-    if (specialty !== 'All') list = list.filter((d) => d.specialty === specialty);
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((d) => d.name.toLowerCase().includes(q) || d.specialty?.toLowerCase().includes(q));
-    }
-    return list;
-  }, [doctors, query, specialty]);
 
   const recentDoctors = useMemo(
     () => recentIds.map((id) => doctors.find((d) => d.id === id)).filter(Boolean),

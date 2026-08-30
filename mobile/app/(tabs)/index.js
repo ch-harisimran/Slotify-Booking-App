@@ -1,99 +1,20 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
 import { View, Text, TextInput, FlatList, ActivityIndicator, StyleSheet, RefreshControl, Pressable, Image } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { apiFetch } from '../../lib/api';
-import { useAuth } from '../../context/AuthContext';
+import { useDoctorSearch } from '../../hooks/useDoctorSearch';
 import DoctorCard from '../../components/DoctorCard';
+import NotificationBell from '../../components/NotificationBell';
 import { colors, radii, shadow } from '../../theme';
 import { getSpecialtyStyle } from '../../lib/specialties';
 
 export default function HomeScreen() {
-  const { session, profile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [doctors, setDoctors] = useState([]);
-  const [query, setQuery] = useState('');
-  const [specialty, setSpecialty] = useState('All');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [favoriteIds, setFavoriteIds] = useState(new Set());
-  const [nextAppointment, setNextAppointment] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await apiFetch('/api/services');
-      setDoctors(data);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-      if (session) {
-        apiFetch('/api/favorites/me', { token: session.access_token })
-          .then((rows) => setFavoriteIds(new Set(rows.map((r) => r.service_id))))
-          .catch(() => {});
-        apiFetch('/api/bookings/me', { token: session.access_token })
-          .then((rows) => {
-            const upcoming = rows
-              .filter((b) => b.status !== 'cancelled' && new Date(b.start_time) > new Date())
-              .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-            setNextAppointment(upcoming[0] || null);
-          })
-          .catch(() => {});
-      } else {
-        setFavoriteIds(new Set());
-        setNextAppointment(null);
-      }
-    }, [load, session])
-  );
-
-  async function toggleFavorite(doctor) {
-    if (!session) return router.push('/login');
-    const isFav = favoriteIds.has(doctor.id);
-    setFavoriteIds((prev) => {
-      const next = new Set(prev);
-      isFav ? next.delete(doctor.id) : next.add(doctor.id);
-      return next;
-    });
-    try {
-      if (isFav) {
-        await apiFetch(`/api/favorites/${doctor.id}`, { method: 'DELETE', token: session.access_token });
-      } else {
-        await apiFetch('/api/favorites', { method: 'POST', token: session.access_token, body: { service_id: doctor.id } });
-      }
-    } catch {
-      setFavoriteIds((prev) => {
-        const next = new Set(prev);
-        isFav ? next.add(doctor.id) : next.delete(doctor.id);
-        return next;
-      });
-    }
-  }
-
-  const specialties = useMemo(() => {
-    const set = new Set(doctors.map((d) => d.specialty).filter(Boolean));
-    return ['All', ...set];
-  }, [doctors]);
-
-  const filtered = useMemo(() => {
-    let list = doctors;
-    if (specialty !== 'All') list = list.filter((d) => d.specialty === specialty);
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((d) => d.name.toLowerCase().includes(q) || d.specialty?.toLowerCase().includes(q));
-    }
-    return [...list].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-  }, [doctors, query, specialty]);
+  const {
+    session, profile, query, setQuery, specialty, setSpecialty, loading, refreshing, refresh,
+    error, favoriteIds, toggleFavorite, specialties, popular, nextAppointment,
+  } = useDoctorSearch({ withNextAppointment: true });
 
   const firstName = profile?.name?.split(' ')[0];
 
@@ -118,9 +39,7 @@ export default function HomeScreen() {
               <Text style={styles.greeting}>{firstName || 'there'}</Text>
             </View>
           </Pressable>
-          <Pressable style={styles.bellBtn}>
-            <Ionicons name="notifications-outline" size={19} color={colors.text} />
-          </Pressable>
+          <NotificationBell />
         </View>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={17} color={colors.textFaint} />
@@ -197,7 +116,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={filtered}
+        data={popular}
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={{ gap: 12 }}
@@ -207,7 +126,7 @@ export default function HomeScreen() {
           <DoctorCard doctor={item} favorited={favoriteIds.has(item.id)} onToggleFavorite={toggleFavorite} />
         )}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
         }
         ListEmptyComponent={<Text style={styles.muted}>No doctors match your search.</Text>}
       />
@@ -225,7 +144,6 @@ const styles = StyleSheet.create({
   avatarSmText: { color: colors.white, fontWeight: '800', fontSize: 15 },
   hello: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   greeting: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 1 },
-  bellBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center', justifyContent: 'center' },
   subtitle: { fontSize: 13.5, color: colors.textMuted, marginBottom: 16 },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

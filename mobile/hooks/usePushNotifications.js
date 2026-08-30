@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { apiFetch } from '../lib/api';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -12,13 +13,14 @@ Notifications.setNotificationHandler({
 });
 
 /**
- * Requests push notification permission and returns the device's Expo push token.
- *
- * Week 4 TODO: send this token to the backend (e.g. a `push_token` column on
- * `public.users`) so booking confirmations/reminders can actually be sent via
- * Expo's push service. This hook only handles the client-side registration.
+ * Requests push notification permission, grabs the device's Expo push
+ * token, and — once a session is available — saves it to the backend
+ * (`users.push_token`) so booking confirmation/cancellation/reschedule
+ * pushes and waitlist "a slot opened up" alerts can actually be sent.
+ * Pass the current Supabase session's access_token; the hook re-saves
+ * whenever either the token or the session changes.
  */
-export function usePushNotifications() {
+export function usePushNotifications(accessToken) {
   const [expoPushToken, setExpoPushToken] = useState(null);
   const [error, setError] = useState(null);
 
@@ -35,6 +37,15 @@ export function usePushNotifications() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!expoPushToken || !accessToken) return;
+    apiFetch('/api/users/push-token', {
+      method: 'PATCH',
+      token: accessToken,
+      body: { push_token: expoPushToken },
+    }).catch(() => {});
+  }, [expoPushToken, accessToken]);
 
   return { expoPushToken, error };
 }

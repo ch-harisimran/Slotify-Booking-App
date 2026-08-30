@@ -79,21 +79,30 @@ export default function AiAssistantScreen() {
     }
   }
 
-  async function bookSlot(doctorId, slot) {
+  // With `rescheduleBookingId`, this moves an existing booking (PATCH)
+  // instead of creating a new one (POST) — used when the AI offered
+  // "closest available slots" for a reschedule rather than a fresh booking.
+  async function bookSlot(doctorId, slot, rescheduleBookingId) {
     if (!session) return router.push('/login');
     setBusy(true);
     try {
-      const booking = await apiFetch('/api/bookings', {
-        method: 'POST',
-        token: session.access_token,
-        body: { service_id: doctorId, start_time: slot.start_time, end_time: slot.end_time },
-      });
+      const booking = rescheduleBookingId
+        ? await apiFetch(`/api/bookings/${rescheduleBookingId}`, {
+            method: 'PATCH',
+            token: session.access_token,
+            body: { start_time: slot.start_time, end_time: slot.end_time },
+          })
+        : await apiFetch('/api/bookings', {
+            method: 'POST',
+            token: session.access_token,
+            body: { service_id: doctorId, start_time: slot.start_time, end_time: slot.end_time },
+          });
       setChat((c) => [
         ...c,
         {
           role: 'assistant',
           intent: 'booking_confirmed',
-          text: `Booked! You're set for ${new Date(booking.start_time).toLocaleString([], {
+          text: `${rescheduleBookingId ? "Done — I've moved it to" : "Booked! You're set for"} ${new Date(booking.start_time).toLocaleString([], {
             weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
           })}.`,
         },
@@ -204,7 +213,7 @@ export default function AiAssistantScreen() {
               </View>
             )}
 
-            {msg.intent === 'book' && msg.doctor && (
+            {(msg.intent === 'book' || msg.intent === 'reschedule') && msg.doctor && (
               <View style={styles.doctorRow}>
                 <View style={styles.doctorPhoto}>
                   {msg.doctor.photo_url && <Image source={{ uri: msg.doctor.photo_url }} style={{ width: '100%', height: '100%' }} />}
@@ -219,7 +228,7 @@ export default function AiAssistantScreen() {
             {msg.intent === 'booking_unavailable' && msg.nearest_slots?.length > 0 && (
               <View style={styles.slotWrap}>
                 {msg.nearest_slots.map((slot) => (
-                  <Pressable key={slot.start_time} style={styles.slot} onPress={() => bookSlot(msg.doctor.id, slot)}>
+                  <Pressable key={slot.start_time} style={styles.slot} onPress={() => bookSlot(msg.doctor.id, slot, msg.reschedule_booking_id)}>
                     <Text style={styles.slotText}>
                       {new Date(slot.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                     </Text>
@@ -228,7 +237,7 @@ export default function AiAssistantScreen() {
               </View>
             )}
 
-            {msg.intent === 'booking_confirmed' && (
+            {(msg.intent === 'booking_confirmed' || msg.intent === 'booking_cancelled') && (
               <Pressable style={styles.searchBtn} onPress={() => router.push('/(tabs)/bookings')}>
                 <Text style={styles.searchBtnText}>View my bookings</Text>
               </Pressable>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Image, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, statusColors } from '../theme';
 
@@ -64,7 +64,21 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
     }
   }
 
-  async function handleCancel() {
+  function handleCancel() {
+    const when = new Date(booking.start_time).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    Alert.alert(
+      'Cancel appointment?',
+      `Cancel your appointment with ${booking.services?.name || 'this doctor'} on ${when}?`,
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Cancel appointment', style: 'destructive', onPress: confirmCancel },
+      ]
+    );
+  }
+
+  async function confirmCancel() {
     setBusy(true);
     setError('');
     try {

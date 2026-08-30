@@ -43,6 +43,8 @@ export default function DoctorDetailsScreen() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [waitlistEntry, setWaitlistEntry] = useState(null);
+  const [waitlistBusy, setWaitlistBusy] = useState(false);
 
   useEffect(() => {
     apiFetch('/api/services').then((services) => setDoctor(services.find((s) => s.id === id) || null));
@@ -53,6 +55,13 @@ export default function DoctorDetailsScreen() {
     if (!session) return setFavorited(false);
     apiFetch('/api/favorites/me', { token: session.access_token })
       .then((rows) => setFavorited(rows.some((r) => r.service_id === id)))
+      .catch(() => {});
+  }, [session, id]);
+
+  useEffect(() => {
+    if (!session) return setWaitlistEntry(null);
+    apiFetch('/api/waitlist/me', { token: session.access_token })
+      .then((rows) => setWaitlistEntry(rows.find((w) => w.service_id === id && w.status === 'waiting') || null))
       .catch(() => {});
   }, [session, id]);
 
@@ -78,6 +87,28 @@ export default function DoctorDetailsScreen() {
       }
     } catch {
       setFavorited((f) => !f);
+    }
+  }
+
+  async function toggleWaitlist() {
+    if (!session) return router.push('/login');
+    setWaitlistBusy(true);
+    try {
+      if (waitlistEntry) {
+        await apiFetch(`/api/waitlist/${waitlistEntry.id}`, { method: 'DELETE', token: session.access_token });
+        setWaitlistEntry(null);
+      } else {
+        const created = await apiFetch('/api/waitlist', {
+          method: 'POST',
+          token: session.access_token,
+          body: { service_id: id },
+        });
+        setWaitlistEntry(created);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWaitlistBusy(false);
     }
   }
 
@@ -188,7 +219,21 @@ export default function DoctorDetailsScreen() {
 
           <Text style={[styles.label, { marginTop: 16 }]}>Choose Time</Text>
           {loadingSlots && <ActivityIndicator style={{ marginTop: 8 }} color={colors.accent} />}
-          {!loadingSlots && slots.length === 0 && <Text style={styles.muted}>No open slots on this day — try another date.</Text>}
+          {!loadingSlots && slots.length === 0 && (
+            <>
+              <Text style={styles.muted}>No open slots on this day — try another date.</Text>
+              <Pressable
+                style={[styles.waitlistBtn, waitlistEntry && styles.waitlistBtnActive]}
+                onPress={toggleWaitlist}
+                disabled={waitlistBusy}
+              >
+                <Ionicons name="notifications-outline" size={14} color={waitlistEntry ? colors.text : colors.white} />
+                <Text style={[styles.waitlistBtnText, waitlistEntry && styles.waitlistBtnTextActive]}>
+                  {waitlistEntry ? "You're on the waitlist — leave" : `Notify me when ${doctor.name} has an opening`}
+                </Text>
+              </Pressable>
+            </>
+          )}
           <View style={styles.slotWrap}>
             {slots.map((slot) => {
               const selected = selectedSlot?.start_time === slot.start_time;
@@ -272,6 +317,13 @@ const styles = StyleSheet.create({
   dom: { fontSize: 16, fontWeight: '700', color: colors.text, marginTop: 2 },
   domSelected: { color: colors.white },
   muted: { color: colors.textMuted, marginTop: 4 },
+  waitlistBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    backgroundColor: colors.accent, borderRadius: radii.pill, paddingVertical: 9, paddingHorizontal: 14, marginTop: 10,
+  },
+  waitlistBtnActive: { backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border },
+  waitlistBtnText: { color: colors.white, fontWeight: '700', fontSize: 12.5 },
+  waitlistBtnTextActive: { color: colors.text },
   slotWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   slot: { borderWidth: 1.5, borderColor: colors.border, borderRadius: radii.pill, paddingVertical: 9, paddingHorizontal: 16, backgroundColor: colors.surface },
   slotSelected: { backgroundColor: colors.accent, borderColor: colors.accent },

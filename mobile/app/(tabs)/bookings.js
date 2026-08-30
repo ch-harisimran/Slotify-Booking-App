@@ -19,9 +19,10 @@ export default function BookingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  // Registers for Expo push notifications (permission + token). Sending the
-  // token to the backend for confirmation/reminder pushes is still a TODO.
-  usePushNotifications();
+  // Registers for Expo push notifications (permission + token) and saves the
+  // token to the backend so booking confirmation/cancellation/reschedule and
+  // waitlist pushes can actually be sent.
+  usePushNotifications(session?.access_token);
 
   const load = useCallback(async () => {
     if (!session) return;
