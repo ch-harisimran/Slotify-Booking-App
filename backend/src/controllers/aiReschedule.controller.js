@@ -114,7 +114,19 @@ async function rescheduleWithAi(req, res, next) {
       .eq('id', id)
       .select()
       .single();
-    if (updateError) throw updateError;
+    if (updateError) {
+      // 23P01 = exclusion_violation — the isSlotFree check above passed but
+      // someone else's write landed in the same slot before this update did.
+      if (updateError.code === '23P01') {
+        const nearestSlots = await findNearestSlots(booking.service_id, parsed.date);
+        return res.status(409).json({
+          error: 'That time is no longer available.',
+          parsed,
+          nearest_slots: nearestSlots,
+        });
+      }
+      throw updateError;
+    }
     notifyBookingRescheduled(updated).catch(() => {});
 
     res.json({ booking: updated, parsed, reply: parsed.reply });

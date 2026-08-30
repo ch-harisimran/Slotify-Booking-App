@@ -179,7 +179,22 @@ async function buildBookingResponse({ parsed, roster, req }) {
     })
     .select()
     .single();
-  if (bookingError) throw bookingError;
+  if (bookingError) {
+    // 23P01 = exclusion_violation — someone else's booking landed in the
+    // same slot between our isSlotFree check and this insert. Same race the
+    // manual booking flow can hit; answer the same way it does, just phrased
+    // for the chat.
+    if (bookingError.code === '23P01') {
+      const nearestSlots = await findNearestSlots(doctor.id, parsed.requested_date);
+      return {
+        intent: 'booking_unavailable',
+        reply: `Someone just booked that slot with ${doctor.name}. Here are the closest available times — want one of these?`,
+        doctor,
+        nearest_slots: nearestSlots,
+      };
+    }
+    throw bookingError;
+  }
   notifyBookingConfirmed(booking).catch(() => {});
 
   return {
@@ -374,7 +389,19 @@ async function buildRescheduleResponse({ parsed, user }) {
     .eq('id', target.id)
     .select()
     .single();
-  if (updateError) throw updateError;
+  if (updateError) {
+    if (updateError.code === '23P01') {
+      const nearestSlots = await findNearestSlots(target.service_id, parsed.requested_date);
+      return {
+        intent: 'booking_unavailable',
+        reply: `Someone just took that slot with ${target.services?.name}. Here are the closest available times — want one of these?`,
+        doctor: target.services,
+        nearest_slots: nearestSlots,
+        reschedule_booking_id: target.id,
+      };
+    }
+    throw updateError;
+  }
   notifyBookingRescheduled(updated).catch(() => {});
 
   return {

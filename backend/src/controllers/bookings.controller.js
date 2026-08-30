@@ -51,7 +51,16 @@ async function createBooking(req, res, next) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // 23P01 = exclusion_violation — the DB-level bookings_no_overlap
+      // constraint caught a race the isSlotFree pre-check missed (two
+      // concurrent requests for the same slot). Whoever's INSERT loses
+      // gets the same friendly conflict response as the pre-check.
+      if (error.code === '23P01') {
+        return res.status(409).json({ error: 'That slot is no longer available' });
+      }
+      throw error;
+    }
     notifyBookingConfirmed(data).catch(() => {});
     res.status(201).json(data);
   } catch (err) {
@@ -136,7 +145,12 @@ async function updateBooking(req, res, next) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23P01') {
+        return res.status(409).json({ error: 'That slot is no longer available' });
+      }
+      throw error;
+    }
 
     if (updates.status === 'cancelled') {
       notifyBookingCancelled(data).catch(() => {});

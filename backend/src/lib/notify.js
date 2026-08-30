@@ -47,8 +47,24 @@ async function notifyBookingConfirmed(booking) {
   const serviceName = await serviceNameFor(booking.service_id);
   await notifyUser(booking.user_id, {
     title: 'Booking confirmed',
-    body: `${serviceName} on ${formatWhen(booking.start_time)}`,
+    body: `Your meeting has been successfully scheduled with ${serviceName} on ${formatWhen(booking.start_time)}.`,
     data: { type: 'booking_confirmed', bookingId: booking.id },
+  });
+}
+
+/**
+ * Sent right after a user signs in on the mobile app (see AuthContext's
+ * SIGNED_IN handler) — "Welcome to Slotify" for a brand-new account,
+ * "Welcome back" for a returning one. `isNewAccount` is decided by the
+ * caller from how recently the account row was created.
+ */
+async function notifyWelcome(userId, isNewAccount) {
+  await notifyUser(userId, {
+    title: isNewAccount ? 'Welcome to Slotify' : 'Welcome back',
+    body: isNewAccount
+      ? "We're glad you're here — find the right doctor and book your first visit in seconds."
+      : 'Good to see you again. Your appointments are one tap away.',
+    data: { type: isNewAccount ? 'welcome' : 'welcome_back' },
   });
 }
 
@@ -76,4 +92,5 @@ module.exports = {
   notifyBookingConfirmed,
   notifyBookingCancelled,
   notifyBookingRescheduled,
+  notifyWelcome,
 };
