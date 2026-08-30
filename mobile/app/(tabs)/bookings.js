@@ -1,16 +1,19 @@
 import { useCallback, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet, RefreshControl, Pressable } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import BookingCard from '../../components/BookingCard';
+import EmptyState from '../../components/EmptyState';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
 import { colors, radii } from '../../theme';
 
 export default function BookingsScreen() {
   const { session, profile, loading: authLoading } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,7 +97,7 @@ export default function BookingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.title}>{firstName ? `${firstName}'s bookings` : 'My Bookings'}</Text>
         <Text style={styles.subtitle}>Manage appointments, or ask the AI to move one.</Text>
       </View>
@@ -102,7 +105,7 @@ export default function BookingsScreen() {
       <FlatList
         data={bookings}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, paddingTop: 4 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 110 }}
         renderItem={({ item }) => (
           <BookingCard
             booking={item}
@@ -120,7 +123,13 @@ export default function BookingsScreen() {
             }}
           />
         }
-        ListEmptyComponent={<Text style={styles.muted}>No bookings yet. Book a service from the Services tab.</Text>}
+        ListEmptyComponent={
+          <EmptyState
+            variant="bookings"
+            title="No bookings yet"
+            subtitle="Find a doctor and book your first visit."
+          />
+        }
       />
     </View>
   );

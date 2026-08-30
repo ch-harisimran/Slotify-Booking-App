@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radii, statusColors } from '../theme';
 
@@ -32,10 +32,17 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
   const [chat, setChat] = useState([{ role: 'assistant', text: GREETING }]);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
+  const chatThreadRef = useRef(null);
 
   const durationMinutes = booking.services?.duration_minutes || 30;
   const canModify = booking.status !== 'cancelled';
   const colorSet = statusColors[booking.status] || statusColors.confirmed;
+
+  // Keeps the newest message (or the "Thinking…" bubble) in view instead of
+  // leaving the user to scroll the mini chat down manually.
+  useEffect(() => {
+    requestAnimationFrame(() => chatThreadRef.current?.scrollToEnd({ animated: true }));
+  }, [chat.length, chatBusy]);
 
   function resetPanels() {
     setMode(null);
@@ -79,8 +86,11 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 
     try {
       const result = await onAiReschedule(booking.id, message);
-      const newTime = result?.booking?.start_time || booking.start_time;
-      setChat((c) => [...c, { role: 'assistant', text: `Done — I've moved it to ${formatSlot(newTime)}.` }]);
+      if (result?.needsInfo) {
+        setChat((c) => [...c, { role: 'assistant', text: result.reply }]);
+      } else if (result?.booking) {
+        setChat((c) => [...c, { role: 'assistant', text: `Done — I've moved it to ${formatSlot(result.booking.start_time)}.` }]);
+      }
     } catch (err) {
       const suggestions = err.data?.nearest_slots?.length ? err.data.nearest_slots : null;
       setChat((c) => [...c, { role: 'error', text: err.message, suggestions }]);
@@ -106,10 +116,15 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
       <View style={styles.headerRow}>
         <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
           <View style={styles.avatar}>
-            <Ionicons name="cut-outline" size={16} color={colors.white} />
+            {booking.services?.photo_url ? (
+              <Image source={{ uri: booking.services.photo_url }} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+            ) : (
+              <Ionicons name="medkit-outline" size={16} color={colors.white} />
+            )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{booking.services?.name || 'Service'}</Text>
+            <Text style={styles.name}>{booking.services?.name || 'Doctor'}</Text>
+            {booking.services?.specialty && <Text style={styles.specialty}>{booking.services.specialty}</Text>}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Ionicons name="calendar-outline" size={12} color={colors.textMuted} />
               <Text style={styles.date}>
@@ -169,7 +184,7 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 
       {canModify && mode === 'ai' && (
         <View style={{ marginTop: 12 }}>
-          <ScrollView style={styles.chatThread} nestedScrollEnabled>
+          <ScrollView ref={chatThreadRef} style={styles.chatThread} nestedScrollEnabled>
             {chat.map((msg, i) => (
               <View key={i} style={{ marginBottom: 8 }}>
                 <View
@@ -235,8 +250,9 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft, borderRadius: radii.md, padding: 16, marginBottom: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  avatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  name: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 3 },
+  avatar: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  name: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  specialty: { fontSize: 11.5, color: colors.textMuted, marginBottom: 3 },
   date: { fontSize: 12.5, color: colors.textMuted },
   badge: { borderRadius: radii.pill, paddingVertical: 3, paddingHorizontal: 10 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
@@ -263,6 +279,6 @@ const styles = StyleSheet.create({
   chatInputRow: { flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'center' },
   chatInput: { flex: 1, borderWidth: 1.5, borderColor: colors.border, borderRadius: radii.pill, paddingVertical: 10, paddingHorizontal: 16, fontSize: 13.5 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  sendBtnDisabled: { backgroundColor: '#b9cdfb' },
+  sendBtnDisabled: { backgroundColor: colors.accentDisabled },
   error: { color: colors.danger, marginTop: 8, fontSize: 13 },
 });

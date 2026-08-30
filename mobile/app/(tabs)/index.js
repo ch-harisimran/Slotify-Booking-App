@@ -1,24 +1,31 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, TextInput, FlatList, ActivityIndicator, StyleSheet, RefreshControl } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { View, Text, TextInput, FlatList, ActivityIndicator, StyleSheet, RefreshControl, Pressable, Image } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
-import ServiceCard from '../../components/ServiceCard';
-import { colors, radii } from '../../theme';
+import DoctorCard from '../../components/DoctorCard';
+import { colors, radii, shadow } from '../../theme';
+import { getSpecialtyStyle } from '../../lib/specialties';
 
-export default function ServicesScreen() {
-  const { profile } = useAuth();
-  const [services, setServices] = useState([]);
+export default function HomeScreen() {
+  const { session, profile } = useAuth();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [doctors, setDoctors] = useState([]);
   const [query, setQuery] = useState('');
+  const [specialty, setSpecialty] = useState('All');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
+  const [nextAppointment, setNextAppointment] = useState(null);
 
   const load = useCallback(async () => {
     try {
       const data = await apiFetch('/api/services');
-      setServices(data);
+      setDoctors(data);
       setError('');
     } catch (err) {
       setError(err.message);
@@ -31,16 +38,62 @@ export default function ServicesScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      if (session) {
+        apiFetch('/api/favorites/me', { token: session.access_token })
+          .then((rows) => setFavoriteIds(new Set(rows.map((r) => r.service_id))))
+          .catch(() => {});
+        apiFetch('/api/bookings/me', { token: session.access_token })
+          .then((rows) => {
+            const upcoming = rows
+              .filter((b) => b.status !== 'cancelled' && new Date(b.start_time) > new Date())
+              .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+            setNextAppointment(upcoming[0] || null);
+          })
+          .catch(() => {});
+      } else {
+        setFavoriteIds(new Set());
+        setNextAppointment(null);
+      }
+    }, [load, session])
   );
 
+  async function toggleFavorite(doctor) {
+    if (!session) return router.push('/login');
+    const isFav = favoriteIds.has(doctor.id);
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      isFav ? next.delete(doctor.id) : next.add(doctor.id);
+      return next;
+    });
+    try {
+      if (isFav) {
+        await apiFetch(`/api/favorites/${doctor.id}`, { method: 'DELETE', token: session.access_token });
+      } else {
+        await apiFetch('/api/favorites', { method: 'POST', token: session.access_token, body: { service_id: doctor.id } });
+      }
+    } catch {
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        isFav ? next.add(doctor.id) : next.delete(doctor.id);
+        return next;
+      });
+    }
+  }
+
+  const specialties = useMemo(() => {
+    const set = new Set(doctors.map((d) => d.specialty).filter(Boolean));
+    return ['All', ...set];
+  }, [doctors]);
+
   const filtered = useMemo(() => {
-    if (!query.trim()) return services;
-    const q = query.trim().toLowerCase();
-    return services.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q)
-    );
-  }, [services, query]);
+    let list = doctors;
+    if (specialty !== 'All') list = list.filter((d) => d.specialty === specialty);
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      list = list.filter((d) => d.name.toLowerCase().includes(q) || d.specialty?.toLowerCase().includes(q));
+    }
+    return [...list].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  }, [doctors, query, specialty]);
 
   const firstName = profile?.name?.split(' ')[0];
 
@@ -52,16 +105,28 @@ export default function ServicesScreen() {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>{firstName ? `Hey, ${firstName}` : 'Book an appointment'}</Text>
-        <Text style={styles.subtitle}>Pick a service and find a time that works for you.</Text>
+  const ListHeader = (
+    <View>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <View style={styles.topRow}>
+          <Pressable style={styles.topRowLeft} onPress={() => router.push('/(tabs)/profile')}>
+            <View style={styles.avatarSm}>
+              <Text style={styles.avatarSmText}>{(firstName || 'S').slice(0, 1).toUpperCase()}</Text>
+            </View>
+            <View>
+              <Text style={styles.hello}>Hello</Text>
+              <Text style={styles.greeting}>{firstName || 'there'}</Text>
+            </View>
+          </Pressable>
+          <Pressable style={styles.bellBtn}>
+            <Ionicons name="notifications-outline" size={19} color={colors.text} />
+          </Pressable>
+        </View>
         <View style={styles.searchBar}>
           <Ionicons name="search" size={17} color={colors.textFaint} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search services…"
+            placeholder="Find the right doctor for you"
             placeholderTextColor={colors.textFaint}
             value={query}
             onChangeText={setQuery}
@@ -69,32 +134,83 @@ export default function ServicesScreen() {
         </View>
       </View>
 
-      {error ? (
-        <Text style={styles.error}>
-          Couldn't load services: {error}. Check EXPO_PUBLIC_API_URL in .env and that the backend is running.
-        </Text>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: 16, paddingTop: 4 }}
-          renderItem={({ item }) => <ServiceCard service={item} />}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                load();
-              }}
-            />
-          }
-          ListEmptyComponent={
-            <Text style={styles.muted}>
-              {services.length === 0 ? 'No services available yet.' : 'No services match your search.'}
+      {session && nextAppointment && (
+        <Pressable style={styles.apptCard} onPress={() => router.push('/(tabs)/bookings')}>
+          <View style={styles.apptPhoto}>
+            {nextAppointment.services?.photo_url ? (
+              <Image source={{ uri: nextAppointment.services.photo_url }} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.apptLabel}>MY APPOINTMENT</Text>
+            <Text style={styles.apptName}>
+              {nextAppointment.services?.name} · {nextAppointment.services?.specialty}
             </Text>
-          }
-        />
+            <Text style={styles.apptTime}>
+              {new Date(nextAppointment.start_time).toLocaleString([], {
+                weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+              })}
+            </Text>
+          </View>
+        </Pressable>
       )}
+
+      <Text style={styles.sectionTitle}>Doctor Specialty</Text>
+      <FlatList
+        data={specialties}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item}
+        contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+        renderItem={({ item }) => {
+          const active = specialty === item;
+          const style = item !== 'All' ? getSpecialtyStyle(item) : null;
+          return (
+            <Pressable
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => setSpecialty(item)}
+            >
+              {style && (
+                <View style={[styles.chipIcon, { backgroundColor: active ? 'rgba(255,255,255,0.22)' : style.bg }]}>
+                  <Ionicons name={style.icon} size={11} color={active ? colors.white : style.fg} />
+                </View>
+              )}
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{item}</Text>
+            </Pressable>
+          );
+        }}
+      />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.sectionHeadRow}>
+        <Text style={styles.sectionTitle}>Popular Doctors</Text>
+        <Pressable onPress={() => router.push('/(tabs)/search')}>
+          <Text style={styles.seeAll}>See all</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.container}>
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={{ gap: 12 }}
+        contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 110, gap: 12 }}
+        ListHeaderComponent={ListHeader}
+        renderItem={({ item }) => (
+          <DoctorCard doctor={item} favorited={favoriteIds.has(item.id)} onToggleFavorite={toggleFavorite} />
+        )}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
+        }
+        ListEmptyComponent={<Text style={styles.muted}>No doctors match your search.</Text>}
+      />
     </View>
   );
 }
@@ -102,21 +218,42 @@ export default function ServicesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
-  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  greeting: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  header: { paddingTop: 16, paddingBottom: 8 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
+  topRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarSm: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  avatarSmText: { color: colors.white, fontWeight: '800', fontSize: 15 },
+  hello: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  greeting: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 1 },
+  bellBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center', justifyContent: 'center' },
   subtitle: { fontSize: 13.5, color: colors.textMuted, marginBottom: 16 },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-    height: 46,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.surface, borderRadius: radii.pill, borderWidth: 1,
+    borderColor: colors.border, paddingHorizontal: 16, height: 46,
   },
   searchInput: { flex: 1, fontSize: 14, color: colors.text },
-  error: { color: colors.danger, padding: 16 },
+  apptCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.surface, borderRadius: radii.md, borderWidth: 1,
+    borderColor: colors.borderSoft, padding: 14, marginBottom: 20, ...shadow,
+  },
+  apptPhoto: { width: 46, height: 46, borderRadius: 14, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  apptLabel: { fontSize: 10, fontWeight: '700', color: colors.textFaint, letterSpacing: 0.4 },
+  apptName: { fontSize: 13.5, fontWeight: '700', color: colors.text, marginTop: 2 },
+  apptTime: { fontSize: 12.5, color: colors.textMuted, marginTop: 1 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 10, marginTop: 4 },
+  sectionHeadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 24 },
+  seeAll: { fontSize: 12.5, fontWeight: '600', color: colors.accent },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 7, paddingHorizontal: 14, paddingLeft: 7, borderRadius: radii.pill,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  chipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipIcon: { width: 22, height: 22, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  chipText: { fontSize: 12.5, fontWeight: '600', color: colors.textMuted },
+  chipTextActive: { color: colors.white },
+  error: { color: colors.danger, marginTop: 12 },
   muted: { color: colors.textMuted, padding: 16, textAlign: 'center' },
 });
