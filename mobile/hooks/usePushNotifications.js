@@ -1,16 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import { apiFetch } from '../lib/api';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
+import { registerForPushNotifications, savePushToken } from '../lib/push';
 
 /**
  * Requests push notification permission, grabs the device's Expo push
@@ -19,6 +8,10 @@ Notifications.setNotificationHandler({
  * pushes and waitlist "a slot opened up" alerts can actually be sent.
  * Pass the current Supabase session's access_token; the hook re-saves
  * whenever either the token or the session changes.
+ *
+ * This is a redundant safety net for whenever the bookings screen mounts —
+ * the primary registration path is AuthContext's SIGNED_IN handler, which
+ * runs immediately after login/signup so the welcome push has a token.
  */
 export function usePushNotifications(accessToken) {
   const [expoPushToken, setExpoPushToken] = useState(null);
@@ -40,40 +33,8 @@ export function usePushNotifications(accessToken) {
 
   useEffect(() => {
     if (!expoPushToken || !accessToken) return;
-    apiFetch('/api/users/push-token', {
-      method: 'PATCH',
-      token: accessToken,
-      body: { push_token: expoPushToken },
-    }).catch(() => {});
+    savePushToken(accessToken, expoPushToken).catch(() => {});
   }, [expoPushToken, accessToken]);
 
   return { expoPushToken, error };
-}
-
-async function registerForPushNotifications() {
-  if (!Device.isDevice) {
-    console.warn('[usePushNotifications] Push notifications require a physical device.');
-    return null;
-  }
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== 'granted') {
-    console.warn('[usePushNotifications] Permission not granted.');
-    return null;
-  }
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.DEFAULT,
-    });
-  }
-
-  const { data: token } = await Notifications.getExpoPushTokenAsync();
-  return token;
 }

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useDoctorSearch } from '../../hooks/useDoctorSearch';
 import DoctorCard from '../../components/DoctorCard';
 import NotificationBell from '../../components/NotificationBell';
+import Avatar from '../../components/Avatar';
 import { colors, radii, shadow } from '../../theme';
 import { getSpecialtyStyle } from '../../lib/specialties';
 
@@ -31,9 +32,7 @@ export default function HomeScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <View style={styles.topRow}>
           <Pressable style={styles.topRowLeft} onPress={() => router.push('/(tabs)/profile')}>
-            <View style={styles.avatarSm}>
-              <Text style={styles.avatarSmText}>{(firstName || 'S').slice(0, 1).toUpperCase()}</Text>
-            </View>
+            <Avatar url={profile?.avatar_url} name={profile?.name} email={profile?.email} size={42} />
             <View>
               <Text style={styles.hello}>Hello</Text>
               <Text style={styles.greeting}>{firstName || 'there'}</Text>
@@ -140,8 +139,6 @@ const styles = StyleSheet.create({
   header: { paddingTop: 16, paddingBottom: 8 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
   topRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatarSm: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  avatarSmText: { color: colors.white, fontWeight: '800', fontSize: 15 },
   hello: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
   greeting: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 1 },
   subtitle: { fontSize: 13.5, color: colors.textMuted, marginBottom: 16 },

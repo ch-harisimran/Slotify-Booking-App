@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabaseClient';
+import { apiFetch } from '../lib/api';
+import { registerForPushNotifications, savePushToken } from '../lib/push';
 
 const AuthContext = createContext({ session: null, profile: null, loading: true });
 
@@ -19,6 +21,21 @@ function extractTokensFromUrl(url) {
   return { access_token, refresh_token };
 }
 
+// Registers this device for push notifications (if not already granted),
+// saves the token, then asks the backend to send the welcome push — the
+// backend decides "Welcome to Slotify" vs "Welcome back" from how recently
+// the account was created. Best-effort throughout: a denied permission or a
+// failed request here should never block sign-in.
+async function registerAndWelcome(accessToken) {
+  try {
+    const token = await registerForPushNotifications();
+    if (token) await savePushToken(accessToken, token);
+  } catch {
+    // permission denied or registration failed — still try the welcome push below
+  }
+  apiFetch('/api/users/welcome-push', { method: 'POST', token: accessToken }).catch(() => {});
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -31,7 +48,7 @@ export function AuthProvider({ children }) {
     }
     const { data } = await supabase
       .from('users')
-      .select('id, name, email, role')
+      .select('id, name, email, role, avatar_url')
       .eq('id', currentSession.user.id)
       .single();
     setProfile(data || null);
@@ -44,9 +61,18 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       loadProfile(newSession);
+
+      // 'SIGNED_IN' only fires for an actual interactive sign-in (password,
+      // OTP verification, OAuth) — not for the silent session restore on
+      // app relaunch or a background token refresh — so this is the right
+      // moment to greet the user: register for push (if not already) and
+      // fire the welcome/welcome-back push once a token is saved.
+      if (event === 'SIGNED_IN' && newSession) {
+        registerAndWelcome(newSession.access_token);
+      }
     });
 
     // Catches the redirect back from the Google sign-in page (see

@@ -5,8 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
+import { apiFetch } from '../../lib/api';
+import { pickAvatarImage, uploadAvatar } from '../../lib/avatar';
 import { colors, radii, shadow } from '../../theme';
-import { initials } from '../../lib/format';
+import Avatar from '../../components/Avatar';
 
 function Row({ icon, label, onPress, danger }) {
   return (
@@ -36,9 +38,51 @@ export default function ProfileScreen() {
   const [passwordSaving, setPasswordSaving] = useState(false);
 
   const [policyOpen, setPolicyOpen] = useState(null); // null | 'privacy' | 'terms'
+  const [deleting, setDeleting] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+  }
+
+  async function handleChangeAvatar() {
+    try {
+      const asset = await pickAvatarImage();
+      if (!asset) return; // user cancelled
+      setAvatarUploading(true);
+      await uploadAvatar(session.user.id, asset);
+      await refreshProfile();
+    } catch (err) {
+      Alert.alert('Could not update photo', err.message);
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete account?',
+      "This permanently deletes your Slotify account and cancels every upcoming appointment you have booked. This can't be undone.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete account', style: 'destructive', onPress: confirmDeleteAccount },
+      ]
+    );
+  }
+
+  async function confirmDeleteAccount() {
+    setDeleting(true);
+    try {
+      await apiFetch('/api/users/me', { method: 'DELETE', token: session.access_token });
+    } catch (err) {
+      setDeleting(false);
+      Alert.alert('Could not delete account', err.message);
+      return;
+    }
+    // The account (and its session) is already gone server-side at this
+    // point — signOut here just clears local storage, so ignore any error.
+    await supabase.auth.signOut().catch(() => {});
+    setDeleting(false);
   }
 
   async function saveName() {
@@ -99,9 +143,12 @@ export default function ProfileScreen() {
       <Text style={styles.title}>My Profile</Text>
 
       <View style={styles.profileRow}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials(profile?.name, profile?.email)}</Text>
-        </View>
+        <Pressable onPress={handleChangeAvatar} disabled={avatarUploading} style={styles.avatarWrap}>
+          <Avatar url={profile?.avatar_url} name={profile?.name} email={profile?.email} size={58} />
+          <View style={styles.avatarEditBadge}>
+            <Ionicons name={avatarUploading ? 'ellipsis-horizontal' : 'camera'} size={12} color={colors.white} />
+          </View>
+        </Pressable>
         <View>
           <Text style={styles.name}>{profile?.name || 'Slotify user'}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
@@ -124,6 +171,12 @@ export default function ProfileScreen() {
 
       <View style={[styles.card, { marginTop: 20 }]}>
         <Row icon="log-out-outline" label="Sign out" onPress={handleSignOut} danger />
+        <Row
+          icon="trash-outline"
+          label={deleting ? 'Deleting account…' : 'Delete Account'}
+          onPress={deleting ? undefined : handleDeleteAccount}
+          danger
+        />
       </View>
 
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
@@ -207,8 +260,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: 8, marginBottom: 18 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 26 },
-  avatar: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.white, fontWeight: '800', fontSize: 18 },
+  avatarWrap: { position: 'relative' },
+  avatarEditBadge: {
+    position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.bg,
+  },
   name: { fontSize: 16.5, fontWeight: '800', color: colors.text },
   email: { fontSize: 12.5, color: colors.textMuted, marginTop: 2 },
   sectionLabel: { fontSize: 12, fontWeight: '700', color: colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8, marginTop: 4 },
