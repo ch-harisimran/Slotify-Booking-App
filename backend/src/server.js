@@ -8,6 +8,8 @@ const bookingsRoutes = require('./routes/bookings.routes');
 const adminRoutes = require('./routes/admin.routes');
 const aiRoutes = require('./routes/ai.routes');
 const favoritesRoutes = require('./routes/favorites.routes');
+const usersRoutes = require('./routes/users.routes');
+const waitlistRoutes = require('./routes/waitlist.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -23,6 +25,8 @@ app.use('/api/bookings', bookingsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/favorites', favoritesRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/waitlist', waitlistRoutes);
 
 // AI reschedule lives at POST /api/bookings/:id/reschedule-ai (see bookings.routes.js)
 // AI assistant (greeting/symptoms/booking) lives at POST /api/ai/chat (see ai.routes.js)

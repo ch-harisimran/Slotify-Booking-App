@@ -57,7 +57,9 @@ async function getOpenSlotsForDate(serviceId, date) {
         return slotStart.getTime() < bEnd && slotEnd.getTime() > bStart;
       });
 
-      if (!overlaps) {
+      // Skip slots that have already started — otherwise a same-day search
+      // shows "open" times earlier than right now, which nobody can book.
+      if (!overlaps && slotStart.getTime() > Date.now()) {
         slots.push({ start_time: slotStart.toISOString(), end_time: slotEnd.toISOString() });
       }
       cursor = new Date(cursor.getTime() + duration * 60000);
@@ -67,4 +69,29 @@ async function getOpenSlotsForDate(serviceId, date) {
   return { duration_minutes: duration, slots };
 }
 
-module.exports = { getOpenSlotsForDate };
+/**
+ * Walks forward day-by-day from `fromDate` collecting open slots for a
+ * service, up to `limit` slots or `maxDays` days out. Shared by the AI
+ * reschedule and AI assistant controllers as their "here's the nearest
+ * available time instead" fallback.
+ */
+async function findNearestSlots(serviceId, fromDate, maxDays = 7, limit = 3) {
+  const found = [];
+  const cursor = new Date(`${fromDate}T00:00:00.000Z`);
+
+  for (let i = 0; i < maxDays && found.length < limit; i += 1) {
+    const dateStr = cursor.toISOString().slice(0, 10);
+    const result = await getOpenSlotsForDate(serviceId, dateStr);
+    if (result) {
+      for (const slot of result.slots) {
+        if (found.length >= limit) break;
+        found.push(slot);
+      }
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return found;
+}
+
+module.exports = { getOpenSlotsForDate, findNearestSlots };

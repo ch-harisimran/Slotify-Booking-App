@@ -1,4 +1,6 @@
 const { supabaseAdmin } = require('../config/supabaseClient');
+const { notifyBookingConfirmed, notifyBookingCancelled, notifyBookingRescheduled } = require('../lib/notify');
+const { notifyWaitlistOnCancellation } = require('../lib/waitlist');
 
 async function isSlotFree({ service_id, start_time, end_time, excludeBookingId }) {
   let query = supabaseAdmin
@@ -28,6 +30,9 @@ async function createBooking(req, res, next) {
     if (new Date(end_time) <= new Date(start_time)) {
       return res.status(400).json({ error: 'end_time must be after start_time' });
     }
+    if (new Date(start_time).getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'start_time must be in the future' });
+    }
 
     const free = await isSlotFree({ service_id, start_time, end_time });
     if (!free) {
@@ -47,6 +52,7 @@ async function createBooking(req, res, next) {
       .single();
 
     if (error) throw error;
+    notifyBookingConfirmed(data).catch(() => {});
     res.status(201).json(data);
   } catch (err) {
     next(err);
@@ -102,6 +108,9 @@ async function updateBooking(req, res, next) {
       if (new Date(newEnd) <= new Date(newStart)) {
         return res.status(400).json({ error: 'end_time must be after start_time' });
       }
+      if (new Date(newStart).getTime() <= Date.now()) {
+        return res.status(400).json({ error: 'start_time must be in the future' });
+      }
       const free = await isSlotFree({
         service_id: booking.service_id,
         start_time: newStart,
@@ -128,6 +137,14 @@ async function updateBooking(req, res, next) {
       .single();
 
     if (error) throw error;
+
+    if (updates.status === 'cancelled') {
+      notifyBookingCancelled(data).catch(() => {});
+      notifyWaitlistOnCancellation(data.service_id).catch(() => {});
+    } else if (updates.start_time) {
+      notifyBookingRescheduled(data).catch(() => {});
+    }
+
     res.json(data);
   } catch (err) {
     next(err);

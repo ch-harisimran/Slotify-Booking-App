@@ -103,10 +103,21 @@ async function updateAvailability(req, res, next) {
 
 async function listAllBookings(req, res, next) {
   try {
-    const { data, error } = await supabaseAdmin
+    const { date, service_id, status } = req.query;
+    let query = supabaseAdmin
       .from('bookings')
-      .select('*, users(name, email), services(name)')
+      .select('*, users(name, email), services(name, specialty, price, duration_minutes)')
       .order('start_time', { ascending: true });
+
+    if (date) {
+      const dayStart = new Date(`${date}T00:00:00.000Z`);
+      const dayEnd = new Date(`${date}T23:59:59.999Z`);
+      query = query.gte('start_time', dayStart.toISOString()).lte('start_time', dayEnd.toISOString());
+    }
+    if (service_id) query = query.eq('service_id', service_id);
+    if (status) query = query.eq('status', status);
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json(data);
   } catch (err) {

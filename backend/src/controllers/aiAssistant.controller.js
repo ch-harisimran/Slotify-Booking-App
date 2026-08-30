@@ -1,9 +1,9 @@
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { isSlotFree } = require('./bookings.controller');
-const { getOpenSlotsForDate } = require('../lib/slots');
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const { getOpenSlotsForDate, findNearestSlots } = require('../lib/slots');
+const { chatJson, badResponseError } = require('../lib/openrouter');
+const { notifyBookingConfirmed, notifyBookingCancelled, notifyBookingRescheduled } = require('../lib/notify');
+const { notifyWaitlistOnCancellation } = require('../lib/waitlist');
 
 const DISCLAIMER = "This isn't a medical diagnosis — please see a doctor for anything serious or persistent.";
 
@@ -28,30 +28,29 @@ function buildSystemPrompt(doctorRoster) {
     '- "symptom": the user is describing an actual physical or mental health symptom, complaint, or medical concern — in ANY phrasing, including casual, ungrammatical, or indirect descriptions (e.g. "I am having shivering", "my tooth hurts so bad", "I am having a baby" meaning pregnancy, "feeling dizzy lately", "cant sleep at all"). Do not require precise medical terminology to recognize a symptom.',
     '- "which_doctor": the user is asking which doctor is best/most suitable for symptoms already discussed in this conversation.',
     '- "book": the user wants to book/schedule an appointment (e.g. "book this doctor for me", "book Dr. X", "schedule an appointment", "yes book it"), OR they are replying with a day/time because you (the assistant) just asked them for one.',
-    '- "my_bookings": the user is asking about their OWN scheduled appointments (e.g. "which appointments do I have", "what\'s on my schedule", "do I have anything booked", "when is my next appointment"). This is a factual lookup, not a request to book something new.',
+    '- "cancel": the user wants to cancel one of their OWN existing upcoming appointments (e.g. "cancel my appointment", "cancel my booking with Dr. Ahmed", "I need to cancel").',
+    '- "reschedule": the user wants to move one of their OWN existing upcoming appointments to a different day/time (e.g. "reschedule my appointment to Friday", "can you move my booking with Dr. Ahmed to 3pm tomorrow", "change my appointment time"). This is different from "book", which creates a brand-new appointment rather than moving an existing one.',
+    '- "my_bookings": the user is asking about their OWN scheduled appointments (e.g. "which appointments do I have", "what\'s on my schedule", "do I have anything booked", "when is my next appointment"). This is a factual lookup, not a request to book, cancel, or reschedule anything.',
     '- "past_checkups": the user is asking about their OWN past symptom checks / health history with this app (e.g. "what have I been checked for before", "what did I tell you last time", "what\'s my checkup history"). Not a new symptom report.',
     '',
     `Real doctor roster on the app (only ever reference these — never invent a name; exact specialties, spelled EXACTLY like this: ${specialties.join(', ')}):`,
     rosterText,
     '',
     'Rules:',
-    '- Only fill in affected_area / condition_guess / recommended_specialty / doctors-related fields when intent is "symptom", "which_doctor", or "book". Leave them null for "greeting", "my_bookings", and "past_checkups" — those two are answered from the app\'s own records, not from you, so just keep "reply" short and conversational (e.g. "Sure, let me check." / "One sec, pulling that up.") and let the fields stay null.',
+    '- Only fill in affected_area / condition_guess / recommended_specialty when intent is "symptom" or "which_doctor". Leave them null otherwise.',
+    '- Leave recommended_doctor_name / requested_date / requested_time null for "greeting", "my_bookings", and "past_checkups" — those are answered from the app\'s own records, not from you, so just keep "reply" short and conversational (e.g. "Sure, let me check." / "One sec, pulling that up.") and let the fields stay null.',
     '- recommended_specialty MUST be copied EXACTLY (same spelling/case) from the specialty list above — never invent or paraphrase a specialty name.',
     '- Map the symptom to the MOST SPECIFIC matching specialty whenever one reasonably fits, rather than defaulting to a general one. Examples: toothache/gum/mouth pain → Dentist; pregnancy/period/women\'s health → Gynecologist; skin rash/acne/itching → Dermatologist; chest pain/palpitations/high blood pressure → Cardiologist; child/infant symptoms → Pediatric; eye pain/blurry vision → Ophthalmology; ear/nose/throat/sore throat/sinus → ENT; anxiety/depression/stress/sleep issues → Psychiatry; weight/diet concerns → Nutrition; joint/bone/back/muscle pain → Orthopedics; headache/dizziness/numbness/seizures → Neurologist; fever/chills/shivering/cold/flu/general unwellness with no clearer specialty fit → Consultation (general physician) as the sensible default, not a fallback of last resort.',
     '- For "which_doctor" or when symptoms were already discussed earlier in the conversation, pick the strongest roster match by specialty fit, rating, and experience for recommended_doctor_name.',
     '- For "book": figure out which roster doctor the user means from the conversation (an explicitly named doctor, or the most recently discussed/recommended one). Put their exact roster name in recommended_doctor_name, or null if it is genuinely unclear (then ask which doctor in your reply).',
     '- For "book": try to extract a requested appointment day and time from the CURRENT message only. requested_date must be YYYY-MM-DD (resolve relative terms like "tomorrow" or "Friday" using today\'s date above, always a date on or after today). requested_time must be 24h "HH:MM" (map vague times: morning=09:00, afternoon=14:00, evening=16:00). If the message does not contain a day or time, set both to null and ask for them in your reply instead of guessing.',
+    '- For "cancel" or "reschedule": if the user names a doctor (e.g. "cancel my appointment with Dr. Ahmed"), copy that doctor\'s exact roster name into recommended_doctor_name so the app can find the right one of the user\'s upcoming appointments; if no doctor is named, leave it null (the app will ask which appointment if the user has more than one).',
+    '- For "reschedule": also try to extract a requested day/time from the CURRENT message the same way as "book" (requested_date/requested_time, same format rules, both null if the message doesn\'t state one — the app will ask instead of guessing).',
     '- Keep "reply" short, warm, and conversational (1-3 sentences). For "symptom", end by inviting them to search doctors or book an appointment with a related doctor. Never state a diagnosis as certain — always frame it as a possibility.',
     '',
     'Respond ONLY with minified JSON, no markdown fences, no commentary before or after — the entire response must be exactly one JSON object in this shape:',
-    '{"intent": "greeting|symptom|which_doctor|book|my_bookings|past_checkups", "reply": "string", "affected_area": "string or null", "condition_guess": "string or null", "recommended_specialty": "exact specialty name or null", "recommended_doctor_name": "exact roster name or null", "requested_date": "YYYY-MM-DD or null", "requested_time": "HH:MM or null"}',
+    '{"intent": "greeting|symptom|which_doctor|book|cancel|reschedule|my_bookings|past_checkups", "reply": "string", "affected_area": "string or null", "condition_guess": "string or null", "recommended_specialty": "exact specialty name or null", "recommended_doctor_name": "exact roster name or null", "requested_date": "YYYY-MM-DD or null", "requested_time": "HH:MM or null"}',
   ].join('\n');
-}
-
-function badResponseError() {
-  const err = new Error("The AI assistant couldn't process that — try rephrasing.");
-  err.status = 422;
-  return err;
 }
 
 async function fetchDoctorRoster() {
@@ -63,52 +62,7 @@ async function fetchDoctorRoster() {
   return data || [];
 }
 
-async function requestCompletion(messages) {
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.APP_URL || 'http://localhost:4000',
-      'X-Title': 'Slotify',
-    },
-    // json_object mode makes the model return pure JSON instead of
-    // occasionally wrapping it in prose or markdown fences, which was the
-    // root cause of intermittent "couldn't process" failures on otherwise
-    // ordinary messages.
-    body: JSON.stringify({ model: MODEL, messages, response_format: { type: 'json_object' } }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    const err = new Error(`OpenRouter request failed (${response.status}): ${text.slice(0, 200)}`);
-    err.status = 502;
-    throw err;
-  }
-
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content || '';
-}
-
-function parseAiContent(content) {
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    if (!parsed.reply || !parsed.intent) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
 async function callOpenRouter(message, history, roster) {
-  if (!process.env.OPENROUTER_API_KEY) {
-    const err = new Error('OPENROUTER_API_KEY is not set on the server');
-    err.status = 500;
-    throw err;
-  }
-
   const messages = [
     { role: 'system', content: buildSystemPrompt(roster) },
     ...(Array.isArray(history)
@@ -116,28 +70,7 @@ async function callOpenRouter(message, history, roster) {
       : []),
     { role: 'user', content: message },
   ];
-
-  // The model occasionally returns malformed JSON on a given call even in
-  // json_object mode — retry once with a firmer reminder before surfacing
-  // an error to the user, since a second attempt reliably succeeds.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const attemptMessages =
-      attempt === 0
-        ? messages
-        : [
-            ...messages,
-            {
-              role: 'system',
-              content:
-                'Your previous reply was not valid JSON. Respond again with ONLY a single valid JSON object in the exact required shape — no other text.',
-            },
-          ];
-    const content = await requestCompletion(attemptMessages);
-    const parsed = parseAiContent(content);
-    if (parsed) return parsed;
-  }
-
-  throw badResponseError();
+  return chatJson(messages, { isValid: (parsed) => !!(parsed.reply && parsed.intent) });
 }
 
 function doctorsForSpecialty(roster, specialty, preferredName) {
@@ -181,23 +114,6 @@ function resolveDoctorByName(roster, name) {
     roster.find((d) => d.name.toLowerCase().includes(lower) || lower.includes(d.name.toLowerCase())) ||
     null
   );
-}
-
-async function findNearestSlots(doctorId, fromDate, maxDays = 7, limit = 3) {
-  const found = [];
-  const cursor = new Date(`${fromDate}T00:00:00.000Z`);
-  for (let i = 0; i < maxDays && found.length < limit; i += 1) {
-    const dateStr = cursor.toISOString().slice(0, 10);
-    const result = await getOpenSlotsForDate(doctorId, dateStr);
-    if (result) {
-      for (const slot of result.slots) {
-        if (found.length >= limit) break;
-        found.push(slot);
-      }
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return found;
 }
 
 // --- book: resolve doctor + day/time and actually create the booking ---
@@ -264,6 +180,7 @@ async function buildBookingResponse({ parsed, roster, req }) {
     .select()
     .single();
   if (bookingError) throw bookingError;
+  notifyBookingConfirmed(booking).catch(() => {});
 
   return {
     intent: 'booking_confirmed',
@@ -312,6 +229,159 @@ async function buildMyBookingsResponse(user) {
     intent: 'my_bookings',
     reply: `You have ${userBookings.length} upcoming appointment${userBookings.length > 1 ? 's' : ''}: ${summary}.`,
     bookings: userBookings,
+  };
+}
+
+// Shared by cancel/reschedule below: the user's own upcoming (non-cancelled)
+// bookings, newest-first-service-included so callers can match a named
+// doctor without a second query.
+async function fetchUpcomingBookings(userId) {
+  const { data, error } = await supabaseAdmin
+    .from('bookings')
+    .select('id, start_time, end_time, status, service_id, services(id, name, specialty, photo_url, duration_minutes)')
+    .eq('user_id', userId)
+    .neq('status', 'cancelled')
+    .gte('start_time', new Date().toISOString())
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+// Picks which of the user's upcoming bookings a cancel/reschedule request
+// refers to: the one matching the named doctor if given, the only booking if
+// there's just one, or null if it's genuinely ambiguous (more than one
+// booking and no doctor named) — callers ask instead of guessing in that case.
+function resolveTargetBooking(bookings, doctorName) {
+  if (doctorName) {
+    const lower = doctorName.toLowerCase();
+    const match = bookings.find((b) => b.services?.name?.toLowerCase() === lower);
+    if (match) return match;
+  }
+  if (bookings.length === 1) return bookings[0];
+  return null;
+}
+
+function formatBookingWhen(iso) {
+  return new Date(iso).toLocaleString([], {
+    weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+
+// --- cancel: cancel one of the user's own upcoming bookings ---
+async function buildCancelResponse({ parsed, user }) {
+  if (!user) {
+    return { intent: 'auth_required', reply: "Sign in and I'll pull up your appointments to cancel." };
+  }
+
+  const bookings = await fetchUpcomingBookings(user.id);
+  if (bookings.length === 0) {
+    return { intent: 'cancel', reply: "You don't have any upcoming appointments to cancel.", bookings: [] };
+  }
+
+  const target = resolveTargetBooking(bookings, parsed.recommended_doctor_name);
+  if (!target) {
+    return {
+      intent: 'cancel',
+      reply: 'Which appointment would you like to cancel?',
+      bookings,
+    };
+  }
+
+  const { data: cancelled, error: cancelError } = await supabaseAdmin
+    .from('bookings')
+    .update({ status: 'cancelled' })
+    .eq('id', target.id)
+    .select()
+    .single();
+  if (cancelError) throw cancelError;
+  notifyBookingCancelled(cancelled).catch(() => {});
+  notifyWaitlistOnCancellation(cancelled.service_id).catch(() => {});
+
+  return {
+    intent: 'booking_cancelled',
+    reply: `Done — I've cancelled your appointment with ${target.services?.name} on ${formatBookingWhen(target.start_time)}.`,
+  };
+}
+
+// --- reschedule: move one of the user's own upcoming bookings to a new
+// day/time, reusing the same slot-availability logic as "book" ---
+async function buildRescheduleResponse({ parsed, user }) {
+  if (!user) {
+    return { intent: 'auth_required', reply: "Sign in and I'll move that appointment for you." };
+  }
+
+  const bookings = await fetchUpcomingBookings(user.id);
+  if (bookings.length === 0) {
+    return { intent: 'reschedule', reply: "You don't have any upcoming appointments to reschedule.", bookings: [] };
+  }
+
+  const target = resolveTargetBooking(bookings, parsed.recommended_doctor_name);
+  if (!target) {
+    return {
+      intent: 'reschedule',
+      reply: 'Which appointment would you like to move?',
+      bookings,
+    };
+  }
+
+  if (!parsed.requested_date || !parsed.requested_time) {
+    return {
+      intent: 'reschedule',
+      reply: parsed.reply || `What day and time works for your appointment with ${target.services?.name}?`,
+      doctor: target.services,
+      reschedule_booking_id: target.id,
+    };
+  }
+
+  const startTime = new Date(`${parsed.requested_date}T${parsed.requested_time}:00.000Z`);
+  if (Number.isNaN(startTime.getTime())) throw badResponseError();
+
+  if (startTime.getTime() <= Date.now()) {
+    return {
+      intent: 'reschedule',
+      reply: `${parsed.requested_date} at ${parsed.requested_time} has already passed — what's a future day and time you'd like instead?`,
+      doctor: target.services,
+      reschedule_booking_id: target.id,
+    };
+  }
+
+  const daySlots = await getOpenSlotsForDate(target.service_id, parsed.requested_date);
+  const exactSlot = daySlots?.slots.find((s) => s.start_time === startTime.toISOString());
+
+  const free = exactSlot
+    ? await isSlotFree({
+        service_id: target.service_id,
+        start_time: exactSlot.start_time,
+        end_time: exactSlot.end_time,
+        excludeBookingId: target.id,
+      })
+    : false;
+
+  if (!exactSlot || !free) {
+    const nearestSlots = await findNearestSlots(target.service_id, parsed.requested_date);
+    return {
+      intent: 'booking_unavailable',
+      reply: `That exact time isn't open with ${target.services?.name}. Here are the closest available slots — want one of these?`,
+      doctor: target.services,
+      nearest_slots: nearestSlots,
+      reschedule_booking_id: target.id,
+    };
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('bookings')
+    .update({ start_time: exactSlot.start_time, end_time: exactSlot.end_time, status: 'rescheduled' })
+    .eq('id', target.id)
+    .select()
+    .single();
+  if (updateError) throw updateError;
+  notifyBookingRescheduled(updated).catch(() => {});
+
+  return {
+    intent: 'booking_confirmed',
+    reply: `Done — I've moved your appointment with ${target.services?.name} to ${formatBookingWhen(updated.start_time)}.`,
+    doctor: target.services,
+    booking: updated,
   };
 }
 
@@ -386,6 +456,10 @@ async function chat(req, res, next) {
         disclaimer: DISCLAIMER,
         doctors,
       };
+    } else if (parsed.intent === 'cancel') {
+      responsePayload = await buildCancelResponse({ parsed, user: req.user });
+    } else if (parsed.intent === 'reschedule') {
+      responsePayload = await buildRescheduleResponse({ parsed, user: req.user });
     } else if (parsed.intent === 'my_bookings') {
       responsePayload = await buildMyBookingsResponse(req.user);
     } else if (parsed.intent === 'past_checkups') {

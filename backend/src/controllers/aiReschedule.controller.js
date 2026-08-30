@@ -1,9 +1,8 @@
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { isSlotFree } = require('./bookings.controller');
-const { getOpenSlotsForDate } = require('../lib/slots');
-
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+const { findNearestSlots } = require('../lib/slots');
+const { chatJson, badResponseError } = require('../lib/openrouter');
+const { notifyBookingRescheduled } = require('../lib/notify');
 
 function buildSystemPrompt() {
   const now = new Date();
@@ -21,96 +20,16 @@ function buildSystemPrompt() {
   ].join('\n');
 }
 
-function badResponseError() {
-  const err = new Error("Couldn't understand that — try a specific day and time, e.g. \"Friday at 2pm\".");
-  err.status = 422;
-  return err;
-}
-
-function parseAiContent(content) {
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]);
-    // date/time are allowed to be null (means "ask the user") — only a
-    // missing reply or unparseable JSON counts as a real failure.
-    if (!parsed.reply) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
+const RESCHEDULE_ERROR = "Couldn't understand that — try a specific day and time, e.g. \"Friday at 2pm\".";
 
 async function callOpenRouter(message) {
-  if (!process.env.OPENROUTER_API_KEY) {
-    const err = new Error('OPENROUTER_API_KEY is not set on the server');
-    err.status = 500;
-    throw err;
-  }
-
-  const baseMessages = [
+  const messages = [
     { role: 'system', content: buildSystemPrompt() },
     { role: 'user', content: message },
   ];
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const messages =
-      attempt === 0
-        ? baseMessages
-        : [
-            ...baseMessages,
-            {
-              role: 'system',
-              content: 'Your previous reply was not valid JSON. Respond again with ONLY a single valid JSON object in the exact required shape — no other text.',
-            },
-          ];
-
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.APP_URL || 'http://localhost:4000',
-        'X-Title': 'Slotify',
-      },
-      // json_object mode keeps the model from occasionally wrapping the
-      // answer in prose/markdown, which used to intermittently break parsing.
-      body: JSON.stringify({ model: MODEL, messages, response_format: { type: 'json_object' } }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const err = new Error(`OpenRouter request failed (${response.status}): ${text.slice(0, 200)}`);
-      err.status = 502;
-      throw err;
-    }
-
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content || '';
-    const parsed = parseAiContent(content);
-    if (parsed) return parsed;
-  }
-
-  throw badResponseError();
-}
-
-async function findNearestSlots(serviceId, fromDate, maxDays = 7, limit = 3) {
-  const found = [];
-  const cursor = new Date(`${fromDate}T00:00:00.000Z`);
-
-  for (let i = 0; i < maxDays && found.length < limit; i += 1) {
-    const dateStr = cursor.toISOString().slice(0, 10);
-    const result = await getOpenSlotsForDate(serviceId, dateStr);
-    if (result) {
-      for (const slot of result.slots) {
-        if (found.length >= limit) break;
-        found.push(slot);
-      }
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return found;
+  // date/time are allowed to be null (means "ask the user") — only a
+  // missing reply counts as a structurally invalid parse.
+  return chatJson(messages, { isValid: (parsed) => !!parsed.reply, errorMessage: RESCHEDULE_ERROR });
 }
 
 // POST /api/bookings/:id/reschedule-ai — body: { message }
@@ -155,7 +74,7 @@ async function rescheduleWithAi(req, res, next) {
     }
 
     const startTime = new Date(`${parsed.date}T${parsed.time}:00.000Z`);
-    if (Number.isNaN(startTime.getTime())) throw badResponseError();
+    if (Number.isNaN(startTime.getTime())) throw badResponseError(RESCHEDULE_ERROR);
 
     if (startTime.getTime() <= Date.now()) {
       return res.json({
@@ -196,6 +115,7 @@ async function rescheduleWithAi(req, res, next) {
       .select()
       .single();
     if (updateError) throw updateError;
+    notifyBookingRescheduled(updated).catch(() => {});
 
     res.json({ booking: updated, parsed, reply: parsed.reply });
   } catch (err) {
