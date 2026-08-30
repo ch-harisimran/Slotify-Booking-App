@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/api';
 import BookingCard from '../../components/BookingCard';
+import EmptyState from '../../components/EmptyState';
 import { IconCalendar } from '../../components/icons';
 
 export default function DashboardPage() {
@@ -76,7 +77,7 @@ export default function DashboardPage() {
   const firstName = profile?.name?.split(' ')[0];
 
   return (
-    <div style={{ paddingTop: 28, maxWidth: 680, margin: '0 auto' }}>
+    <div style={{ paddingTop: 28 }}>
       <h1 style={{ marginBottom: 4, fontSize: '1.6rem' }}>
         {firstName ? `${firstName}'s bookings` : 'My Bookings'}
       </h1>
@@ -85,12 +86,16 @@ export default function DashboardPage() {
       {loading && bookings.length === 0 && <p className="muted" style={{ marginTop: 20 }}>Loading bookings…</p>}
       {error && <p className="error-text" style={{ marginTop: 20 }}>{error}</p>}
       {!loading && !error && bookings.length === 0 && (
-        <p className="muted" style={{ marginTop: 20 }}>
-          No bookings yet. <a href="/">Browse services</a> to book one.
-        </p>
+        <EmptyState
+          variant="bookings"
+          title="No bookings yet"
+          subtitle="Find a doctor and book your first visit."
+        >
+          <a href="/" className="btn btn-accent btn-sm">Browse doctors</a>
+        </EmptyState>
       )}
 
-      <div style={{ marginTop: 20 }}>
+      <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 16, alignItems: 'start' }}>
         {bookings.map((booking) => (
           <BookingCard
             key={booking.id}

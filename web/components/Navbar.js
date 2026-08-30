@@ -4,14 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { IconCalendar, IconHome, IconLogOut, IconShield } from './icons';
-
-function initials(name, email) {
-  const source = name || email || '';
-  const parts = source.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return source.slice(0, 2).toUpperCase();
-}
+import { IconCalendar, IconHome, IconLogOut, IconShield, IconHeart, IconMascot, IconUser } from './icons';
+import Logo from './Logo';
+import { initials } from '../lib/format';
 
 export default function Navbar() {
   const { session, profile } = useAuth();
@@ -25,34 +20,47 @@ export default function Navbar() {
     <header className="navbar">
       <div className="navbar-inner">
         <Link href="/" className="brand">
-          <span className="brand-mark">
-            <IconCalendar size={16} />
-          </span>
+          <Logo size={30} rounded={10} />
           Slotify
         </Link>
+
+        {/* Same icon set/order as the mobile bottom nav: Home, Favorite, AI, Bookings, Profile */}
         <nav className="nav-links">
           <Link href="/" className={`nav-link ${pathname === '/' ? 'active' : ''}`}>
             <IconHome size={16} />
-            Services
+            Home
           </Link>
+          <Link href="/favorites" className={`nav-link ${pathname === '/favorites' ? 'active' : ''}`}>
+            <IconHeart size={16} />
+            Favorite
+          </Link>
+          <Link href="/ai" className={`nav-link nav-link-ai ${pathname === '/ai' ? 'active' : ''}`}>
+            <IconMascot size={16} />
+            AI Assistant
+          </Link>
+          <Link href="/dashboard" className={`nav-link ${pathname === '/dashboard' ? 'active' : ''}`}>
+            <IconCalendar size={16} />
+            Bookings
+          </Link>
+          <Link href="/profile" className={`nav-link ${pathname === '/profile' ? 'active' : ''}`}>
+            <IconUser size={16} />
+            Profile
+          </Link>
+          {profile?.role === 'admin' && (
+            <Link href="/admin" className={`nav-link ${pathname === '/admin' ? 'active' : ''}`}>
+              <IconShield size={16} />
+              Admin
+            </Link>
+          )}
+
           {session ? (
             <>
-              <Link href="/dashboard" className={`nav-link ${pathname === '/dashboard' ? 'active' : ''}`}>
-                <IconCalendar size={16} />
-                My Bookings
-              </Link>
-              {profile?.role === 'admin' && (
-                <Link href="/admin" className={`nav-link ${pathname === '/admin' ? 'active' : ''}`}>
-                  <IconShield size={16} />
-                  Admin
-                </Link>
-              )}
               <button className="icon-btn" onClick={handleSignOut} title="Sign out" style={{ marginLeft: 4 }}>
                 <IconLogOut size={16} />
               </button>
-              <div className="avatar avatar-sm" style={{ marginLeft: 6 }}>
+              <Link href="/profile" className="avatar avatar-sm" style={{ marginLeft: 6 }}>
                 {initials(profile?.name, profile?.email)}
-              </div>
+              </Link>
             </>
           ) : (
             <Link href="/login" className="btn btn-accent btn-sm">

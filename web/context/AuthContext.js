@@ -38,8 +38,12 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  async function refreshProfile() {
+    await loadProfile(session);
+  }
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading }}>
+    <AuthContext.Provider value={{ session, profile, loading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

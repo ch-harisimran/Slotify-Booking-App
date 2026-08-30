@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { IconCalendar, IconScissors, IconSend, IconSparkles } from './icons';
+import { useEffect, useRef, useState } from 'react';
+import { IconCalendar, IconStethoscope, IconSend, IconSparkles } from './icons';
 
 function toLocalDateInput(iso) {
   return new Date(iso).toISOString().slice(0, 10);
@@ -34,9 +34,18 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
   const [chat, setChat] = useState([{ role: 'assistant', text: GREETING }]);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
+  const chatThreadRef = useRef(null);
 
   const durationMinutes = booking.services?.duration_minutes || 30;
   const canModify = booking.status !== 'cancelled';
+
+  // Keeps the newest message (or the "Thinking…" bubble) in view instead of
+  // leaving the user to scroll the mini chat down manually.
+  useEffect(() => {
+    const el = chatThreadRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [chat.length, chatBusy]);
 
   function resetPanels() {
     setMode(null);
@@ -82,11 +91,14 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 
     try {
       const result = await onAiReschedule(booking.id, message);
-      const newTime = result?.booking?.start_time || booking.start_time;
-      setChat((c) => [
-        ...c,
-        { role: 'assistant', text: `Done — I've moved it to ${formatSlot(newTime)}.` },
-      ]);
+      if (result?.needsInfo) {
+        setChat((c) => [...c, { role: 'assistant', text: result.reply }]);
+      } else if (result?.booking) {
+        setChat((c) => [
+          ...c,
+          { role: 'assistant', text: `Done — I've moved it to ${formatSlot(result.booking.start_time)}.` },
+        ]);
+      }
     } catch (err) {
       const suggestions = err.data?.nearest_slots?.length ? err.data.nearest_slots : null;
       setChat((c) => [...c, { role: 'error', text: err.message, suggestions }]);
@@ -114,11 +126,19 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
     <div className="card" style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', gap: 12 }}>
-          <div className="avatar">
-            <IconScissors size={16} />
+          <div className="avatar" style={{ overflow: 'hidden' }}>
+            {booking.services?.photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={booking.services.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <IconStethoscope size={16} />
+            )}
           </div>
           <div>
-            <h3 style={{ margin: '0 0 3px', fontSize: '1rem' }}>{booking.services?.name || 'Service'}</h3>
+            <h3 style={{ margin: '0 0 3px', fontSize: '1rem' }}>{booking.services?.name || 'Doctor'}</h3>
+            {booking.services?.specialty && (
+              <p className="muted" style={{ margin: '0 0 3px', fontSize: '0.8rem' }}>{booking.services.specialty}</p>
+            )}
             <p className="muted" style={{ margin: 0, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 5 }}>
               <IconCalendar size={13} />
               {new Date(booking.start_time).toLocaleString([], {
@@ -174,7 +194,7 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
 
       {canModify && mode === 'ai' && (
         <div style={{ marginTop: 14 }}>
-          <div className="chat-thread">
+          <div className="chat-thread" ref={chatThreadRef}>
             {chat.map((msg, i) => (
               <div key={i}>
                 <div className={`chat-bubble ${msg.role}`}>{msg.text}</div>
