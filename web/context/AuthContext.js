@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
     }
     const { data } = await supabase
       .from('users')
-      .select('id, name, email, role')
+      .select('id, name, email, role, avatar_url')
       .eq('id', currentSession.user.id)
       .single();
     setProfile(data || null);

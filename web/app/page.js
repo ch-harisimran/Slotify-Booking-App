@@ -6,7 +6,7 @@ import { useDoctorSearch } from '../lib/useDoctorSearch';
 import DoctorCard from '../components/DoctorCard';
 import { IconSearch, IconCalendar, IconMascot, IconChevronRight } from '../components/icons';
 import { getSpecialtyStyle } from '../lib/specialties';
-import { initials } from '../lib/format';
+import Avatar from '../components/Avatar';
 import NotificationBell from '../components/NotificationBell';
 
 export default function HomePage() {
@@ -22,9 +22,18 @@ export default function HomePage() {
     <div style={{ paddingTop: 28 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Link href={session ? '/profile' : '/login'} style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text)' }}>
-          <span className="avatar" style={{ width: 44, height: 44, borderRadius: 14 }}>
-            {session ? initials(profile?.name, profile?.email) : <IconCalendar size={18} />}
-          </span>
+          {session ? (
+            <Avatar
+              url={profile?.avatar_url}
+              name={profile?.name}
+              email={profile?.email}
+              style={{ width: 44, height: 44, borderRadius: 14 }}
+            />
+          ) : (
+            <span className="avatar" style={{ width: 44, height: 44, borderRadius: 14 }}>
+              <IconCalendar size={18} />
+            </span>
+          )}
           <span>
             <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Hello</span>
             <span style={{ display: 'block', fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 500 }}>

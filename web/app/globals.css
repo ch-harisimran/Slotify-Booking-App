@@ -194,6 +194,14 @@ h1, h2, h3 {
   border-radius: 18px;
 }
 
+/* Modifier for the <img> variant of .avatar (a real profile picture rather
+   than initials) — keeps the same size/shape rules, just swaps the
+   gradient+centered-text look for a cropped photo. */
+.avatar-photo {
+  background: var(--surface-2);
+  object-fit: cover;
+}
+
 /* ---------- Buttons ---------- */
 
 .btn {

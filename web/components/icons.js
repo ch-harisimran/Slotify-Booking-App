@@ -140,6 +140,29 @@ export function IconX(props) {
   );
 }
 
+export function IconTrash(props) {
+  return base(
+    <>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+    </>,
+    props
+  );
+}
+
+export function IconCamera(props) {
+  return base(
+    <>
+      <path d="M4 8h3l2-2h6l2 2h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </>,
+    props
+  );
+}
+
 export function IconShield(props) {
   return base(<path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-4z" />, props);
 }

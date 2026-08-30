@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { IconCalendar, IconHome, IconLogOut, IconShield, IconHeart, IconMascot, IconUser } from './icons';
 import Logo from './Logo';
-import { initials } from '../lib/format';
+import Avatar from './Avatar';
 
 export default function Navbar() {
   const { session, profile } = useAuth();
@@ -58,8 +58,8 @@ export default function Navbar() {
               <button className="icon-btn" onClick={handleSignOut} title="Sign out" style={{ marginLeft: 4 }}>
                 <IconLogOut size={16} />
               </button>
-              <Link href="/profile" className="avatar avatar-sm" style={{ marginLeft: 6 }}>
-                {initials(profile?.name, profile?.email)}
+              <Link href="/profile" style={{ marginLeft: 6, display: 'flex' }}>
+                <Avatar url={profile?.avatar_url} name={profile?.name} email={profile?.email} className="avatar-sm" />
               </Link>
             </>
           ) : (

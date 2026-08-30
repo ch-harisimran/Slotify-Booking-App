@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabaseClient';
+import { apiFetch } from '../../lib/api';
+import { uploadAvatar } from '../../lib/avatar';
 import {
-  IconUser, IconCalendar, IconHeart, IconLock, IconLogOut, IconShield, IconChevronRight, IconX,
+  IconUser, IconCalendar, IconHeart, IconLock, IconLogOut, IconShield, IconChevronRight, IconX, IconTrash, IconCamera,
 } from '../../components/icons';
-import { initials } from '../../lib/format';
+import Avatar from '../../components/Avatar';
 
 function ModalShell({ title, onClose, children }) {
   return (
@@ -81,9 +83,56 @@ export default function ProfilePage() {
 
   const [policyOpen, setPolicyOpen] = useState(null); // null | 'privacy' | 'terms'
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  const avatarInputRef = useRef(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.push('/');
+  }
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    setAvatarError('');
+    setAvatarUploading(true);
+    try {
+      await uploadAvatar(session.user.id, file);
+      await refreshProfile();
+    } catch (err) {
+      setAvatarError(err.message);
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    setDeleteOpen(false);
+    setDeleteConfirmText('');
+    setDeleteError('');
+  }
+
+  async function handleDeleteAccount(e) {
+    e.preventDefault();
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await apiFetch('/api/users/me', { method: 'DELETE', token: session.access_token });
+      // The account (and its session) is already gone server-side — signOut
+      // here just clears local storage, so ignore any error from it.
+      await supabase.auth.signOut().catch(() => {});
+      router.push('/');
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
+    }
   }
 
   async function saveName(e) {
@@ -166,7 +215,30 @@ export default function ProfilePage() {
       <h1 style={{ fontSize: '1.5rem', marginBottom: 20 }}>My Profile</h1>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
-        <div className="avatar avatar-lg">{initials(profile?.name, profile?.email)}</div>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <Avatar url={profile?.avatar_url} name={profile?.name} email={profile?.email} className="avatar-lg" />
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            disabled={avatarUploading}
+            title="Change photo"
+            style={{
+              position: 'absolute', right: -2, bottom: -2, width: 22, height: 22, borderRadius: '50%',
+              background: 'var(--accent)', color: 'white', border: '2px solid var(--bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: avatarUploading ? 'default' : 'pointer',
+              padding: 0,
+            }}
+          >
+            <IconCamera size={11} />
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={handleAvatarChange}
+            style={{ display: 'none' }}
+          />
+        </div>
         {editing ? (
           <form onSubmit={saveName} style={{ flex: 1 }}>
             <input value={name} onChange={(e) => setName(e.target.value)} style={{ marginBottom: 6 }} autoFocus />
@@ -180,6 +252,8 @@ export default function ProfilePage() {
           <div>
             <p style={{ margin: 0, fontWeight: 800, fontSize: '1.05rem' }}>{profile?.name || 'Slotify user'}</p>
             <p className="muted" style={{ margin: '2px 0 0', fontSize: '0.85rem' }}>{profile?.email}</p>
+            {avatarUploading && <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.8rem' }}>Uploading photo…</p>}
+            {avatarError && <p className="error-text" style={{ margin: '4px 0 0', fontSize: '0.8rem' }}>{avatarError}</p>}
           </div>
         )}
       </div>
@@ -204,6 +278,7 @@ export default function ProfilePage() {
 
       <div className="card" style={{ padding: 0 }}>
         <Row icon={<IconLogOut size={15} />} label="Sign out" onClick={handleSignOut} danger />
+        <Row icon={<IconTrash size={15} />} label="Delete Account" onClick={() => setDeleteOpen(true)} danger />
       </div>
 
       {passwordOpen && (
@@ -252,6 +327,36 @@ export default function ProfilePage() {
 
             {passwordError && <p className="error-text">{passwordError}</p>}
             {passwordSuccess && <p className="success-text">{passwordSuccess}</p>}
+          </form>
+        </ModalShell>
+      )}
+
+      {deleteOpen && (
+        <ModalShell title="Delete account" onClose={deleting ? () => {} : closeDeleteModal}>
+          <p style={{ fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--text-muted)', marginTop: 0 }}>
+            This permanently deletes your Slotify account and cancels every upcoming appointment you have booked.
+            This can't be undone.
+          </p>
+          <form onSubmit={handleDeleteAccount}>
+            <div className="field">
+              <label htmlFor="delete-confirm">Type <strong>DELETE</strong> to confirm</label>
+              <input
+                id="delete-confirm"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                autoFocus
+                required
+              />
+            </div>
+            <button
+              className="btn btn-danger btn-block"
+              type="submit"
+              disabled={deleteConfirmText !== 'DELETE' || deleting}
+            >
+              {deleting ? 'Deleting…' : 'Permanently delete my account'}
+            </button>
+            {deleteError && <p className="error-text">{deleteError}</p>}
           </form>
         </ModalShell>
       )}
