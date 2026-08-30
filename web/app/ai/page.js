@@ -63,21 +63,30 @@ export default function AiAssistantPage() {
     }
   }
 
-  async function bookSlot(doctorId, slot) {
+  // With `rescheduleBookingId`, this moves an existing booking (PATCH)
+  // instead of creating a new one (POST) — used when the AI offered
+  // "closest available slots" for a reschedule rather than a fresh booking.
+  async function bookSlot(doctorId, slot, rescheduleBookingId) {
     if (!session) return router.push('/login');
     setBusy(true);
     try {
-      const booking = await apiFetch('/api/bookings', {
-        method: 'POST',
-        token: session.access_token,
-        body: { service_id: doctorId, start_time: slot.start_time, end_time: slot.end_time },
-      });
+      const booking = rescheduleBookingId
+        ? await apiFetch(`/api/bookings/${rescheduleBookingId}`, {
+            method: 'PATCH',
+            token: session.access_token,
+            body: { start_time: slot.start_time, end_time: slot.end_time },
+          })
+        : await apiFetch('/api/bookings', {
+            method: 'POST',
+            token: session.access_token,
+            body: { service_id: doctorId, start_time: slot.start_time, end_time: slot.end_time },
+          });
       setChat((c) => [
         ...c,
         {
           role: 'assistant',
           intent: 'booking_confirmed',
-          text: `Booked! You're set for ${new Date(booking.start_time).toLocaleString([], {
+          text: `${rescheduleBookingId ? "Done — I've moved it to" : "Booked! You're set for"} ${new Date(booking.start_time).toLocaleString([], {
             weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
           })}.`,
         },
@@ -185,7 +194,7 @@ export default function AiAssistantPage() {
               </div>
             )}
 
-            {msg.intent === 'book' && msg.doctor && (
+            {(msg.intent === 'book' || msg.intent === 'reschedule') && msg.doctor && (
               <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, marginTop: 10, maxWidth: '92%' }}>
                 <div className="doctor-avatar-photo" style={{ width: 40, height: 40 }}>
                   {msg.doctor.photo_url && <img src={msg.doctor.photo_url} alt={msg.doctor.name} />}
@@ -204,7 +213,7 @@ export default function AiAssistantPage() {
                     key={slot.start_time}
                     type="button"
                     className="slot-btn"
-                    onClick={() => bookSlot(msg.doctor.id, slot)}
+                    onClick={() => bookSlot(msg.doctor.id, slot, msg.reschedule_booking_id)}
                   >
                     {new Date(slot.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                   </button>
@@ -212,7 +221,7 @@ export default function AiAssistantPage() {
               </div>
             )}
 
-            {msg.intent === 'booking_confirmed' && (
+            {(msg.intent === 'booking_confirmed' || msg.intent === 'booking_cancelled') && (
               <Link href="/dashboard" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }}>View my bookings</Link>
             )}
           </div>

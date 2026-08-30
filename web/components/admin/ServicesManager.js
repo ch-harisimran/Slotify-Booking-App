@@ -1,94 +1,37 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { apiFetch } from '../../lib/api';
+import { useAdminCrudList } from '../../lib/useAdminCrudList';
 
 const emptyForm = { name: '', duration_minutes: '', price: '', description: '' };
 
 export default function ServicesManager({ token }) {
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [form, setForm] = useState(emptyForm);
-  const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState(emptyForm);
-  const [savingId, setSavingId] = useState(null);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await apiFetch('/api/admin/services', { token });
-      setServices(data);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    setCreating(true);
-    setError('');
-    try {
-      await apiFetch('/api/admin/services', {
-        method: 'POST',
-        token,
-        body: {
-          name: form.name,
-          duration_minutes: Number(form.duration_minutes),
-          price: Number(form.price) || 0,
-          description: form.description,
-        },
-      });
-      setForm(emptyForm);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  function startEdit(service) {
-    setEditingId(service.id);
-    setEditForm({
+  const {
+    items: services, loading, error, form, setForm, creating, handleCreate,
+    editingId, editForm, setEditForm, savingId, startEdit, cancelEdit, saveEdit,
+  } = useAdminCrudList({
+    token,
+    listPath: '/api/admin/services',
+    basePath: '/api/admin/services',
+    emptyForm,
+    toCreateBody: (f) => ({
+      name: f.name,
+      duration_minutes: Number(f.duration_minutes),
+      price: Number(f.price) || 0,
+      description: f.description,
+    }),
+    toEditForm: (service) => ({
       name: service.name,
       duration_minutes: service.duration_minutes,
       price: service.price,
       description: service.description || '',
-    });
-  }
-
-  async function saveEdit(id) {
-    setSavingId(id);
-    setError('');
-    try {
-      await apiFetch(`/api/admin/services/${id}`, {
-        method: 'PATCH',
-        token,
-        body: {
-          name: editForm.name,
-          duration_minutes: Number(editForm.duration_minutes),
-          price: Number(editForm.price),
-          description: editForm.description,
-        },
-      });
-      setEditingId(null);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingId(null);
-    }
-  }
+    }),
+    toPatchBody: (f) => ({
+      name: f.name,
+      duration_minutes: Number(f.duration_minutes),
+      price: Number(f.price),
+      description: f.description,
+    }),
+  });
 
   return (
     <div>
@@ -180,7 +123,7 @@ export default function ServicesManager({ token }) {
                         <button type="button" className="btn btn-accent btn-sm" onClick={() => saveEdit(s.id)} disabled={savingId === s.id}>
                           {savingId === s.id ? 'Saving…' : 'Save'}
                         </button>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit}>
                           Cancel
                         </button>
                       </td>

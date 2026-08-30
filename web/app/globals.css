@@ -283,6 +283,10 @@ h1, h2, h3 {
   background: var(--surface-2);
 }
 
+.notif-row:hover {
+  background: var(--surface-2);
+}
+
 /* ---------- Cards & surfaces ---------- */
 
 .card {

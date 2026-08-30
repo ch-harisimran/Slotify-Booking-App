@@ -69,6 +69,12 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
   }
 
   async function handleCancel() {
+    const when = new Date(booking.start_time).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    if (!window.confirm(`Cancel your appointment with ${booking.services?.name || 'this doctor'} on ${when}?`)) {
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -174,7 +180,13 @@ export default function BookingCard({ booking, onCancel, onReschedule, onAiResch
           <div style={{ display: 'flex', gap: 8 }}>
             <div className="field" style={{ flex: 1 }}>
               <label>New date</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <input
+                type="date"
+                value={date}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
             </div>
             <div className="field" style={{ flex: 1 }}>
               <label>New time</label>

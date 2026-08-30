@@ -2,20 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
+import { useAdminCrudList } from '../../lib/useAdminCrudList';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function AvailabilityManager({ token }) {
   const [services, setServices] = useState([]);
   const [serviceId, setServiceId] = useState('');
-  const [windows, setWindows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [form, setForm] = useState({ day_of_week: '1', start_time: '09:00', end_time: '17:00' });
-  const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ day_of_week: '1', start_time: '', end_time: '' });
-  const [savingId, setSavingId] = useState(null);
+  const [servicesError, setServicesError] = useState('');
 
   useEffect(() => {
     apiFetch('/api/services')
@@ -23,81 +17,35 @@ export default function AvailabilityManager({ token }) {
         setServices(data);
         if (data.length > 0) setServiceId(data[0].id);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setServicesError(err.message));
   }, []);
 
-  async function loadWindows(id) {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const data = await apiFetch(`/api/admin/availability?service_id=${id}`, { token });
-      setWindows(data);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (serviceId) loadWindows(serviceId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceId]);
-
-  async function handleCreate(e) {
-    e.preventDefault();
-    setCreating(true);
-    setError('');
-    try {
-      await apiFetch('/api/admin/availability', {
-        method: 'POST',
-        token,
-        body: {
-          service_id: serviceId,
-          day_of_week: Number(form.day_of_week),
-          start_time: form.start_time,
-          end_time: form.end_time,
-        },
-      });
-      await loadWindows(serviceId);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  function startEdit(w) {
-    setEditingId(w.id);
-    setEditForm({
+  const {
+    items: windows, loading, error, form, setForm, creating, handleCreate,
+    editingId, editForm, setEditForm, savingId, startEdit, cancelEdit, saveEdit,
+  } = useAdminCrudList({
+    token,
+    listPath: serviceId ? `/api/admin/availability?service_id=${serviceId}` : null,
+    basePath: '/api/admin/availability',
+    emptyForm: { day_of_week: '1', start_time: '09:00', end_time: '17:00' },
+    resetFormOnCreate: false,
+    toCreateBody: (f) => ({
+      service_id: serviceId,
+      day_of_week: Number(f.day_of_week),
+      start_time: f.start_time,
+      end_time: f.end_time,
+    }),
+    toEditForm: (w) => ({
       day_of_week: String(w.day_of_week),
       start_time: w.start_time.slice(0, 5),
       end_time: w.end_time.slice(0, 5),
-    });
-  }
-
-  async function saveEdit(id) {
-    setSavingId(id);
-    setError('');
-    try {
-      await apiFetch(`/api/admin/availability/${id}`, {
-        method: 'PATCH',
-        token,
-        body: {
-          day_of_week: Number(editForm.day_of_week),
-          start_time: editForm.start_time,
-          end_time: editForm.end_time,
-        },
-      });
-      setEditingId(null);
-      await loadWindows(serviceId);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingId(null);
-    }
-  }
+    }),
+    toPatchBody: (f) => ({
+      day_of_week: Number(f.day_of_week),
+      start_time: f.start_time,
+      end_time: f.end_time,
+    }),
+  });
 
   const sortedWindows = [...windows].sort((a, b) => a.day_of_week - b.day_of_week);
 
@@ -151,7 +99,7 @@ export default function AvailabilityManager({ token }) {
         </button>
       </form>
 
-      {error && <p className="error-text">{error}</p>}
+      {(error || servicesError) && <p className="error-text">{error || servicesError}</p>}
 
       {loading ? (
         <p className="muted" style={{ marginTop: 16 }}>Loading availability…</p>
@@ -200,7 +148,7 @@ export default function AvailabilityManager({ token }) {
                       <button type="button" className="btn btn-accent btn-sm" onClick={() => saveEdit(w.id)} disabled={savingId === w.id}>
                         {savingId === w.id ? 'Saving…' : 'Save'}
                       </button>
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit}>
                         Cancel
                       </button>
                     </td>

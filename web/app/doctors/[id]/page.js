@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { useAuth } from '../../../context/AuthContext';
 import { addRecentlyViewed } from '../../../lib/recentlyViewed';
-import { IconCheck, IconStar, IconHeart, IconBriefcase, IconChevronLeft } from '../../../components/icons';
+import { IconCheck, IconStar, IconHeart, IconBriefcase, IconChevronLeft, IconBell } from '../../../components/icons';
 import { getSpecialtyStyle } from '../../../lib/specialties';
 
 function todayISO() {
@@ -47,6 +47,8 @@ export default function DoctorDetailsPage() {
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [waitlistEntry, setWaitlistEntry] = useState(null);
+  const [waitlistBusy, setWaitlistBusy] = useState(false);
 
   const days = useMemo(() => nextDays(21), []);
 
@@ -62,6 +64,13 @@ export default function DoctorDetailsPage() {
     if (!session) return setFavorited(false);
     apiFetch('/api/favorites/me', { token: session.access_token })
       .then((rows) => setFavorited(rows.some((r) => r.service_id === id)))
+      .catch(() => {});
+  }, [session, id]);
+
+  useEffect(() => {
+    if (!session) return setWaitlistEntry(null);
+    apiFetch('/api/waitlist/me', { token: session.access_token })
+      .then((rows) => setWaitlistEntry(rows.find((w) => w.service_id === id && w.status === 'waiting') || null))
       .catch(() => {});
   }, [session, id]);
 
@@ -87,6 +96,28 @@ export default function DoctorDetailsPage() {
       }
     } catch {
       setFavorited((f) => !f);
+    }
+  }
+
+  async function toggleWaitlist() {
+    if (!session) return router.push('/login');
+    setWaitlistBusy(true);
+    try {
+      if (waitlistEntry) {
+        await apiFetch(`/api/waitlist/${waitlistEntry.id}`, { method: 'DELETE', token: session.access_token });
+        setWaitlistEntry(null);
+      } else {
+        const created = await apiFetch('/api/waitlist', {
+          method: 'POST',
+          token: session.access_token,
+          body: { service_id: id },
+        });
+        setWaitlistEntry(created);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setWaitlistBusy(false);
     }
   }
 
@@ -232,7 +263,21 @@ export default function DoctorDetailsPage() {
               <label style={{ marginTop: 16 }}>Choose Time</label>
               {loadingSlots && <p className="muted">Loading times…</p>}
               {!loadingSlots && slots.length === 0 && (
-                <p className="muted">No open slots on this day — try another date.</p>
+                <>
+                  <p className="muted">No open slots on this day — try another date.</p>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${waitlistEntry ? 'btn-secondary' : 'btn-accent'}`}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4 }}
+                    onClick={toggleWaitlist}
+                    disabled={waitlistBusy}
+                  >
+                    <IconBell size={13} />
+                    {waitlistEntry
+                      ? "You're on the waitlist — leave"
+                      : `Notify me when ${doctor.name} has an opening`}
+                  </button>
+                </>
               )}
               <div className="slots">
                 {slots.map((slot) => (
