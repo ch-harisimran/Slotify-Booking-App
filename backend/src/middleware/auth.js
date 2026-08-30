@@ -39,4 +39,27 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin };
+/**
+ * Like requireAuth, but doesn't reject when no/invalid token is present —
+ * just leaves req.user undefined. Used for routes (like the AI symptom
+ * checker) that should work for signed-out visitors too.
+ */
+async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return next();
+
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data?.user) return next();
+
+  const { data: profile } = await supabaseAdmin
+    .from('users')
+    .select('id, name, email, role')
+    .eq('id', data.user.id)
+    .single();
+
+  if (profile) req.user = profile;
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, optionalAuth };

@@ -58,7 +58,7 @@ async function listMyBookings(req, res, next) {
   try {
     const { data, error } = await supabaseAdmin
       .from('bookings')
-      .select('*, services(name, duration_minutes, price)')
+      .select('*, services(name, duration_minutes, price, specialty, photo_url)')
       .eq('user_id', req.user.id)
       .order('start_time', { ascending: true });
 

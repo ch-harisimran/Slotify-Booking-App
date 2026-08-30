@@ -6,6 +6,8 @@ const servicesRoutes = require('./routes/services.routes');
 const availabilityRoutes = require('./routes/availability.routes');
 const bookingsRoutes = require('./routes/bookings.routes');
 const adminRoutes = require('./routes/admin.routes');
+const aiRoutes = require('./routes/ai.routes');
+const favoritesRoutes = require('./routes/favorites.routes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -19,8 +21,11 @@ app.use('/api/services', servicesRoutes);
 app.use('/api/availability', availabilityRoutes);
 app.use('/api/bookings', bookingsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/favorites', favoritesRoutes);
 
 // AI reschedule lives at POST /api/bookings/:id/reschedule-ai (see bookings.routes.js)
+// AI assistant (greeting/symptoms/booking) lives at POST /api/ai/chat (see ai.routes.js)
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 app.use(errorHandler);

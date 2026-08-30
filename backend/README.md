@@ -36,15 +36,29 @@ Server listens on `http://localhost:4000` (`PORT` in `.env`). Health check: `GET
 
 ## Routes implemented
 
-- `GET /api/services` — public, list services
+- `GET /api/services` — public, list doctors (the `services` table doubles as the doctor-profile table — `specialty`, `photo_url`, `rating`, `reviews_count`, `experience_years`, `bio`, `why_choose`, `education`)
 - `GET /api/availability?service_id=&date=YYYY-MM-DD` — public, open slots for a day
 - `POST /api/bookings` — authenticated, create a booking
 - `GET /api/bookings/me` — authenticated, your bookings
 - `PATCH /api/bookings/:id` — authenticated, manual reschedule/cancel (owner or admin)
 - `POST /api/bookings/:id/reschedule-ai` — authenticated, natural-language reschedule (see below)
+- `POST /api/ai/chat` — signed-in or signed-out, unified AI assistant (greeting, symptom triage + doctor recommendations, booking, and signed-in-only lookups of the user's own upcoming appointments / past symptom checks — see below)
+- `GET /api/ai/history` — authenticated, resumes the user's persisted chat thread
+- `GET /api/favorites/me` / `POST /api/favorites` / `DELETE /api/favorites/:serviceId` — authenticated, saved doctors
 - `GET/POST/PATCH /api/admin/services` — admin-only
 - `GET/POST/PATCH /api/admin/availability` — admin-only
 - `GET /api/admin/bookings` — admin-only, all bookings
+
+## AI assistant
+
+`POST /api/ai/chat` with body `{ "message": "...", "history": [{ role, text }] }` (history is optional, used for multi-turn context like "which doctor is best for that?"):
+
+1. Classifies the message into one intent (`greeting`, `symptom`, `which_doctor`, `book`, `my_bookings`, `past_checkups`) and, for symptom-related intents, fetches the current doctor roster from `services` and sends it to OpenRouter, asking for a likely affected area, a non-diagnostic condition guess, and one recommended specialty (from the roster's actual specialty list).
+2. Independently re-fetches doctors from the DB matching that specialty (never trusts the model to invent a doctor) and returns up to 3, sorted with any doctor the model named by name placed first.
+3. `book` resolves the named doctor + requested day/time and creates the booking directly through the conversation; `my_bookings`/`past_checkups` are answered from the user's own DB rows, never from the model.
+4. Every exchange is logged to `symptom_check_logs`, which also backs `GET /api/ai/history` so the chat thread survives a reload.
+
+Rate-limited to 40 requests/hour per IP+user. Works for signed-out visitors (`optionalAuth`) so the assistant is usable before sign-in; booking and the two lookups still require auth.
 
 ## AI reschedule
 
@@ -64,6 +78,5 @@ Protected routes expect `Authorization: Bearer <supabase_session_access_token>`,
 
 ## Not in this scaffold yet
 
-- Admin panel routes exist, but there's no web UI for them yet
-- Email/push notifications on booking confirmation
+- Push notifications on booking confirmation/reminders (mobile requests the Expo push token but never sends it to the backend — no `push_token` column or send step yet)
 - Deployment (Render/Railway)

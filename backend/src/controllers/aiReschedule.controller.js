@@ -11,17 +11,34 @@ function buildSystemPrompt() {
   const weekday = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
   return [
     `Today is ${weekday}, ${today}.`,
-    "Extract a target date and time from the user's message.",
-    'Respond ONLY with JSON: {"date": "YYYY-MM-DD", "time": "HH:MM"}.',
-    'Use 24-hour time. Map vague times of day to: morning=09:00, afternoon=14:00, evening=17:00.',
-    'If ambiguous, pick the nearest reasonable interpretation that is on or after today.',
-  ].join(' ');
+    "The user is rescheduling an existing appointment. Read their CURRENT message only (not the earlier conversation) for a target day and time.",
+    '- date must be YYYY-MM-DD, resolved from relative terms like "tomorrow", "Friday", "next Tuesday" using today\'s date above — always on or after today.',
+    '- time must be 24h "HH:MM". Map vague times of day: morning=09:00, afternoon=14:00, evening=17:00.',
+    '- If the message does NOT clearly state both a day and a time (e.g. "reschedule it", "move it", "change my appointment", or anything else without an actual day/time in it), you MUST set both date and time to null — never invent or guess one just to have an answer.',
+    '- reply: one short, warm sentence. If date/time is missing, ask for it (e.g. "Sure — what day and time works for you?"). If both are present, briefly confirm what you\'re about to do.',
+    'Respond ONLY with minified JSON, no markdown fences, no commentary — the entire response must be exactly one JSON object:',
+    '{"date": "YYYY-MM-DD or null", "time": "HH:MM or null", "reply": "string"}',
+  ].join('\n');
 }
 
 function badResponseError() {
   const err = new Error("Couldn't understand that — try a specific day and time, e.g. \"Friday at 2pm\".");
   err.status = 422;
   return err;
+}
+
+function parseAiContent(content) {
+  const match = content.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]);
+    // date/time are allowed to be null (means "ask the user") — only a
+    // missing reply or unparseable JSON counts as a real failure.
+    if (!parsed.reply) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 async function callOpenRouter(message) {
@@ -31,45 +48,50 @@ async function callOpenRouter(message) {
     throw err;
   }
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.APP_URL || 'http://localhost:4000',
-      'X-Title': 'Slotify',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: message },
-      ],
-    }),
-  });
+  const baseMessages = [
+    { role: 'system', content: buildSystemPrompt() },
+    { role: 'user', content: message },
+  ];
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    const err = new Error(`OpenRouter request failed (${response.status}): ${text.slice(0, 200)}`);
-    err.status = 502;
-    throw err;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const messages =
+      attempt === 0
+        ? baseMessages
+        : [
+            ...baseMessages,
+            {
+              role: 'system',
+              content: 'Your previous reply was not valid JSON. Respond again with ONLY a single valid JSON object in the exact required shape — no other text.',
+            },
+          ];
+
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.APP_URL || 'http://localhost:4000',
+        'X-Title': 'Slotify',
+      },
+      // json_object mode keeps the model from occasionally wrapping the
+      // answer in prose/markdown, which used to intermittently break parsing.
+      body: JSON.stringify({ model: MODEL, messages, response_format: { type: 'json_object' } }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const err = new Error(`OpenRouter request failed (${response.status}): ${text.slice(0, 200)}`);
+      err.status = 502;
+      throw err;
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseAiContent(content);
+    if (parsed) return parsed;
   }
 
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content || '';
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) throw badResponseError();
-
-  let parsed;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    throw badResponseError();
-  }
-
-  if (!parsed.date || !parsed.time) throw badResponseError();
-
-  return parsed;
+  throw badResponseError();
 }
 
 async function findNearestSlots(serviceId, fromDate, maxDays = 7, limit = 3) {
@@ -123,8 +145,25 @@ async function rescheduleWithAi(req, res, next) {
 
     const parsed = await callOpenRouter(message);
 
+    // The message didn't actually specify a day/time (e.g. "reschedule it")
+    // — ask instead of guessing one and rescheduling anyway.
+    if (!parsed.date || !parsed.time) {
+      return res.json({
+        needsInfo: true,
+        reply: parsed.reply || "Sure — what day and time works for you?",
+      });
+    }
+
     const startTime = new Date(`${parsed.date}T${parsed.time}:00.000Z`);
     if (Number.isNaN(startTime.getTime())) throw badResponseError();
+
+    if (startTime.getTime() <= Date.now()) {
+      return res.json({
+        needsInfo: true,
+        reply: `${parsed.date} at ${parsed.time} has already passed — what's a future day and time you'd like instead?`,
+      });
+    }
+
     const endTime = new Date(startTime.getTime() + service.duration_minutes * 60000);
 
     const free = await isSlotFree({
@@ -158,7 +197,7 @@ async function rescheduleWithAi(req, res, next) {
       .single();
     if (updateError) throw updateError;
 
-    res.json({ booking: updated, parsed });
+    res.json({ booking: updated, parsed, reply: parsed.reply });
   } catch (err) {
     next(err);
   }
